@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>オンラインルーム（ホスト選択→着席→配布→出す）</title>
+<style>
+  :root{
+    --card-w: 56px;                 /* 自分の手札カード幅 */
+    --card-w-opp: calc(64px * .4);  /* 相手の裏面カード幅（自分の約40%） */
+    --card-r: 10px;
+    --card-r-opp: 4px;              /* 他プレイヤーの角丸を抑える */
+    --gap: 10px;
+    --hand-h: 88px;                 /* 画面下の手札バー高さ目安 */
+
+    /* 相手エリアを外側へ寄せる量（まとめて調整） */
+    --opp-shift: 28px;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111}
+  header{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee;gap:12px}
+  h1{margin:0;font-size:18px}
+  .small{font-size:12px;opacity:.85;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .copybtn{padding:6px 10px;border:1px solid #ddd;border-radius:10px;background:#f7f7f7;cursor:pointer}
+  main{padding:14px;display:grid;gap:16px;max-width:1100px;margin:0 auto; padding-bottom: calc(var(--hand-h) + 24px);}
+
+  .join-box{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .join-box input{padding:10px;border:1px solid #ddd;border-radius:8px;font-size:16px}
+  .btn{padding:10px 14px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
+  .btn.ghost{background:#f7f7f7;color:#111}
+  .hidden{display:none !important}
+  .muted{opacity:.7; font-size:13px}
+
+  /* ====== ボトムシート ====== */
+  .bsheet{position:fixed; inset:0; z-index:60; display:flex; flex-direction:column; justify-content:flex-end;}
+  .bsheet.hidden{display:none !important}
+  .bsheet .backdrop{position:absolute; inset:0; background:rgba(0,0,0,.24);}
+  .bsheet .panel{
+    position:relative; background:rgba(255,255,255,.98);
+    border-top-left-radius:16px; border-top-right-radius:16px;
+    border-top:1px solid #eee; box-shadow:0 -10px 30px rgba(0,0,0,.12);
+    padding:10px 12px; animation:slideUp .16s ease-out;
+    width:min(420px, calc(100vw - 32px));
+    margin:0 auto 0;
+  }
+  @keyframes slideUp{from{transform:translateY(12px); opacity:.96} to{transform:translateY(0); opacity:1}}
+  .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center; margin:8px 0;}
+  .row.head{justify-content:space-between}
+  .row .title{font-weight:700}
+  .seg{display:flex; gap:8px; flex-wrap:wrap; justify-content:center}
+  .seg .segbtn{
+    min-width:56px; padding:8px 12px; border-radius:999px; cursor:pointer;
+    border:1px solid #ddd; background:#f7f7f7; font-weight:600;
+  }
+  .seg .segbtn.active{background:#111; color:#fff; border-color:#111;}
+  .seatbtn{
+    min-width:56px; padding:10px 14px; border-radius:12px; cursor:pointer;
+    border:1px solid #ddd; background:#f7f7f7;
+  }
+  .seatbtn.me{ background:#111; color:#fff; border-color:#111; }
+  .seatbtn[disabled]{ opacity:.5; cursor:not-allowed; text-decoration:line-through; }
+
+  /* 右下：設定(FAB) */
+  .fab{
+    position:fixed; right:16px; bottom:16px; z-index:70;
+    width:48px; height:48px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    background:#111; color:#fff; border:1px solid #000; cursor:pointer;
+    box-shadow:0 6px 18px rgba(0,0,0,.2);
+  }
+
+  /* テーブル＆“場”配置 */
+  .table-area{
+    position:relative;
+    min-height:420px;
+    border:none; border-radius:0; padding:0; overflow:visible;
+  }
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#111;color:#fff;font-size:12px}
+
+  /* 相手エリア（3人とも同じ形・同じ向き） */
+  .opp{
+    position:absolute;
+    width:240px; height:180px; /* 扇の舞台（全員共通） */
+    display:block;
+  }
+  .opp.A{left: calc(-150px - var(--opp-shift)); top:70%; transform:translateY(-50%);} /* もっと左へ */
+  .opp.B{right:calc(-150px - var(--opp-shift)); top:70%; transform:translateY(-50%);} /* もっと右へ */
+  .opp.C{left:50%; top: calc(0px - var(--opp-shift)); transform:translateX(-50%);} /* もっと上へ */
+
+  .opp .label{position:absolute; left:50%; top:4px; transform:translateX(-50%); font-weight:700; font-size:12px; opacity:.7}
+  .opp .badge{position:absolute; left:50%; bottom:6px; transform:translateX(-50%);} /* 名前バッジ */
+
+  /* 扇の土台（全員“上向き”で統一） */
+  .fan{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:0; height:0; }
+  .fan .card.opp{
+    position:absolute; left:0; top:0;
+    width: var(--card-w-opp);
+    height: calc(var(--card-w-opp) / 0.714); /* 2.5 : 3.5 比 */
+    border:1px solid #ddd;
+    border-radius: var(--card-r-opp);
+    background:linear-gradient(135deg,#eee,#fafafa);
+    transform-origin:50% 100%;
+    will-change: transform;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+    pointer-events:none;
+  }
+
+  /* 自分の手札 */
+  .handbar{
+    position:fixed; left:0; right:0;
+    bottom: calc(env(safe-area-inset-bottom) + 0px);
+    z-index:40;
+    display:flex; gap:8px; flex-wrap:wrap; justify-content:center;
+    padding:10px 12px;
+    background:linear-gradient(to bottom, rgba(255,255,255,.0), rgba(255,255,255,.7) 40%, rgba(255,255,255,.95));
+    backdrop-filter: blur(2px);
+    min-height: var(--hand-h);
+  }
+
+  /* カード（自分/場） */
+  .card{ width:var(--card-w); aspect-ratio:0.714; border:1px solid #ddd; border-radius:var(--card-r);
+         display:flex; align-items:center; justify-content:center; font-weight:700; background:#fff; }
+  .card:hover{ box-shadow:0 1px 0 rgba(0,0,0,.06); transform:translateY(-1px); }
+  .card.play{  width: calc(var(--card-w) * 1); background:#fff8d6; border-color:#f1c40f; }
+
+  /* “場”（相手側はエリアに合わせて追従） */
+  .play-slot{ position:absolute; display:flex; align-items:center; justify-content:center; }
+  .play-mine-fixed{
+    position:fixed; left:50%;
+    bottom: calc(var(--hand-h) + 24px);
+    transform:translateX(-50%);
+    z-index:45;
+    display:flex; align-items:center; justify-content:center;
+    pointer-events:none;
+  }
+  /* 左/右/上の“場”位置を --opp-shift に追従させる */
+  .play-A{ left: calc(70px - var(--opp-shift)); top:60%; transform:translateY(-50%);}
+  .play-B{ right:calc(40px - var(--opp-shift)); top:60%; transform:translateY(-50%);}
+  .play-C{ left:50%; top:  calc(90px - var(--opp-shift)); transform:translate(-50%, 0);}
+
+  .hostbar{ display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>オンラインルーム</h1>
+  <div class="small" id="headerInfo"></div>
+</header>
+
+<main>
+  <!-- 入室 -->
+  <section id="joinPanel" class="join-box">
+    <input id="nameInput" placeholder="名前（1文字）" maxlength="1" inputmode="text" />
+    <input id="codeInput" placeholder="ルームコード（例: 1234）" maxlength="12" inputmode="numeric" />
+    <button id="btnJoin" class="btn">入室</button>
+  </section>
+
+  <!-- テーブル -->
+  <section id="afterPanel" class="hidden">
+    <div id="hostBar" class="hostbar hidden">
+      <span id="hostInfo">ホスト未設定</span>
+      <button id="btnBecomeHost" class="btn">ホストになる</button>
+      <button id="btn3p" class="btn ghost">3人プレイ</button>
+      <button id="btn4p" class="btn ghost">4人プレイ</button>
+    </div>
+
+    <div id="tableArea" class="table-area">
+      <!-- 相手A/B/C（全員同じ“上向き扇形”） -->
+      <div id="oppA" class="opp A hidden">
+        <div class="label">A</div>
+        <div class="fan"></div>
+        <div class="badge">A</div>
+      </div>
+      <div id="oppB" class="opp B hidden">
+        <div class="label">B</div>
+        <div class="fan"></div>
+        <div class="badge">B</div>
+      </div>
+      <div id="oppC" class="opp C hidden">
+        <div class="label">C</div>
+        <div class="fan"></div>
+        <div class="badge">C</div>
+      </div>
+
+      <!-- “場”（相手） -->
+      <div id="playA" class="play-slot play-A"></div>
+      <div id="playB" class="play-slot play-B"></div>
+      <div id="playC" class="play-slot play-C"></div>
+    </div>
+  </section>
+</main>
+
+<!-- 自分の手札＆場 -->
+<div id="handBar" class="handbar"></div>
+<div id="playMine" class="play-mine-fixed"></div>
+
+<!-- 右下：設定 -->
+<button id="fabOpenSeat" class="fab" title="設定 / 座席選択" aria-label="設定">⚙️</button>
+
+<!-- ボトムシート -->
+<div id="seatSheet" class="bsheet hidden" aria-modal="true" role="dialog">
+  <div class="backdrop" id="sheetBackdrop"></div>
+  <div class="panel" role="document">
+    <div class="row head">
+      <div class="title" id="sheetTitle">座席選択</div>
+      <button id="sheetClose" class="btn ghost" style="padding:6px 10px;">閉じる</button>
+    </div>
+    <div class="row" id="rowTop"><div class="muted">読み込み中…</div></div>
+    <div class="row" id="rowSeats"></div>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+  import { getDatabase, ref, set, onDisconnect, onValue, runTransaction, remove, update } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyASUJcPyybcD9q77XDatI5bCzZxDvsBH_o",
+    authDomain: "shadowraiders-a2dbc.firebaseapp.com",
+    projectId: "shadowraiders-a2dbc",
+    storageBucket: "shadowraiders-a2dbc.firebasestorage.app",
+    messagingSenderId: "577276689873",
+    appId: "1:577276689873:web:9a13faf90c3d6a791e34f0",
+    measurementId: "G-PKNEPDBVSS"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getDatabase(app);
+
+  // ==== DOM ====
+  const headerInfo = document.getElementById('headerInfo');
+  const joinPanel  = document.getElementById('joinPanel');
+  const afterPanel = document.getElementById('afterPanel');
+  const nameInput  = document.getElementById('nameInput');
+  const codeInput  = document.getElementById('codeInput');
+  const btnJoin    = document.getElementById('btnJoin');
+
+  const handBar  = document.getElementById('handBar');
+  const oppA     = document.getElementById('oppA');
+  const oppB     = document.getElementById('oppB');
+  const oppC     = document.getElementById('oppC');
+
+  const playMine = document.getElementById('playMine');
+  const playA    = document.getElementById('playA');
+  const playB    = document.getElementById('playB');
+  const playC    = document.getElementById('playC');
+
+  // ボトムシート
+  const seatSheet   = document.getElementById('seatSheet');
+  const rowTop      = document.getElementById('rowTop');
+  const rowSeats    = document.getElementById('rowSeats');
+  const sheetTitle  = document.getElementById('sheetTitle');
+  const sheetClose  = document.getElementById('sheetClose');
+  const sheetBackdrop = document.getElementById('sheetBackdrop');
+  const fabOpenSeat = document.getElementById('fabOpenSeat');
+
+  // ==== 状態 ====
+  const state = {
+    uid: crypto.randomUUID(),
+    name: "",
+    code: "",
+    joined: false,
+    mySeat: null,      // 1..4
+    playersN: null,    // 3 or 4
+    hostUid: null,
+    seats: {},
+    plays: {},
+    deal: {}
+  };
+
+  function randomLetter(){ return String.fromCharCode(65 + Math.floor(Math.random()*26)); }
+  function random4(){ return String(Math.floor(Math.random()*10000)).padStart(4, '0'); }
+  const NAME_RE = /^[A-Za-z\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]$/;
+  function normalizeName(raw){
+    const t = (raw || "").trim(); if (!t) return randomLetter();
+    const c = t[0]; return NAME_RE.test(c) ? c : randomLetter();
+  }
+  function show(el, yes){ el.classList.toggle('hidden', !yes); }
+
+  function updateHeader(){
+    headerInfo.innerHTML = '';
+    const spanRoom = document.createElement('span');
+    spanRoom.textContent = `コード：${state.code || '-'}`;
+    const spanMe = document.createElement('span');
+    spanMe.textContent = `あなた：${state.name || '-'}`;
+    const btn = document.createElement('button');
+    btn.className = 'copybtn';
+    btn.textContent = 'リンクコピー';
+    btn.onclick = ()=>{
+      const url = new URL(location.href);
+      url.searchParams.set('room', state.code);
+      url.searchParams.set('name', state.name);
+      navigator.clipboard.writeText(url.toString());
+      btn.textContent = 'コピー済み！';
+      setTimeout(()=> btn.textContent='リンクコピー', 1200);
+    };
+    headerInfo.appendChild(spanRoom);
+    headerInfo.appendChild(spanMe);
+    headerInfo.appendChild(btn);
+  }
+
+  // 入室
+  async function join(){
+    const name = normalizeName(nameInput.value);
+    const code = (codeInput.value || "").trim() || random4();
+    state.name = name; state.code = code;
+
+    const meRef = ref(db, `rooms/${code}/participants/${state.uid}`);
+    await set(meRef, { name, at: Date.now() });
+    onDisconnect(meRef).remove();
+
+    await runTransaction(ref(db, `rooms/${code}/settings/hostUid`), cur => cur || state.uid, { applyLocally:false });
+
+    updateHeader();
+    show(joinPanel, false);
+    show(afterPanel, true);
+    state.joined = true;
+
+    wireRoom();
+    openSeatSheet();
+  }
+  btnJoin.onclick = join;
+
+  // 事前入力
+  try{
+    const qs = new URLSearchParams(location.search);
+    const qRoom = (qs.get('room')||'').trim();
+    const qName = (qs.get('name')||'').trim();
+    if (qRoom) codeInput.value = qRoom.slice(0, 12);
+    if (qName) nameInput.value = qName.slice(0, 1);
+  }catch(_e){}
+
+  // ルーム購読
+  function wireRoom(){
+    const room = `rooms/${state.code}`;
+
+    onValue(ref(db, `${room}/settings`), snap=>{
+      const st = snap.val() || {};
+      state.hostUid = st.hostUid || null;
+      state.playersN = st.players || null;
+      if (!seatSheet.classList.contains('hidden')) renderSeatSheet();
+      renderAll();
+    });
+
+    onValue(ref(db, `${room}/deal`), snap=>{
+      state.deal = snap.val() || {};
+      renderAll();
+    });
+
+    onValue(ref(db, `${room}/seats`), snap=>{
+      state.seats = snap.val() || {};
+      state.mySeat = null;
+      for (const k of Object.keys(state.seats)){
+        if (state.seats[k]?.uid === state.uid){ state.mySeat = Number(k); break; }
+      }
+      if (!seatSheet.classList.contains('hidden')) renderSeatSheet();
+      renderAll();
+    });
+
+    onValue(ref(db, `${room}/plays`), snap=>{
+      state.plays = snap.val() || {};
+      renderPlays();
+    });
+  }
+
+  // 配布
+  function makeRoundRobinDeal(N, total=40){
+    const deal = { "1":[], "2":[], "3":[], "4":[] };
+    for (let n=1; n<=total; n++){
+      const seat = ((n-1) % N) + 1;
+      deal[String(seat)].push(n);
+    }
+    return deal;
+  }
+  async function setPlayersAndDeal(N){
+    const room = `rooms/${state.code}`;
+    const deal = makeRoundRobinDeal(N);
+    await update(ref(db), { [`${room}/settings/players`]: N, [`${room}/deal`]: deal });
+  }
+
+  // シート
+  function openSeatSheet(){ show(seatSheet, true); renderSeatSheet(); }
+  function closeSeatSheet(){ show(seatSheet, false); }
+  sheetClose.addEventListener('click', closeSeatSheet);
+  sheetBackdrop.addEventListener('click', closeSeatSheet);
+  fabOpenSeat.addEventListener('click', openSeatSheet);
+
+  function renderSeatSheet(){
+    const isHost = state.hostUid === state.uid;
+    sheetTitle.textContent = isHost ? '設定と着席（ホスト）' : '着席（ゲスト）';
+
+    rowTop.innerHTML = '';
+    if (isHost){
+      const seg = document.createElement('div'); seg.className = 'seg';
+      const btn3 = document.createElement('button'); btn3.className = 'segbtn' + (state.playersN===3 ? ' active':''); btn3.textContent = '3人'; btn3.onclick = async ()=>{ await setPlayersAndDeal(3); };
+      const btn4 = document.createElement('button'); btn4.className = 'segbtn' + (state.playersN===4 ? ' active':''); btn4.textContent = '4人'; btn4.onclick = async ()=>{ await setPlayersAndDeal(4); };
+      seg.appendChild(btn3); seg.appendChild(btn4);
+      const cap = document.createElement('div'); cap.className='muted'; cap.textContent='人数を選んだ時点でカードを配布します。次に座席を選んでください。';
+      rowTop.appendChild(seg); rowTop.appendChild(cap);
+    }else{
+      const cap = document.createElement('div'); cap.className='muted'; cap.textContent = state.playersN ? `現在 ${state.playersN} 人プレイ` : 'ホストが人数を設定中…';
+      rowTop.appendChild(cap);
+    }
+
+    rowSeats.innerHTML = '';
+    const N = state.playersN;
+    for (let i=1; i<=4; i++){
+      const btn = document.createElement('button');
+      const taken = !!state.seats[i];
+      const mine  = state.seats[i]?.uid === state.uid;
+      const invalidByPlayers = (!N) || (N===3 && i===4);
+      btn.className = 'seatbtn' + (mine ? ' me' : '');
+      btn.textContent = mine ? `席${i}（あなた）` : taken ? `席${i}（使用中）` : `席${i}`;
+      btn.disabled = (!mine && (taken || invalidByPlayers));
+      btn.onclick = async ()=>{
+        if (mine){ await releaseMySeat(); }
+        else{
+          const ok = await claimSeat(i);
+          if (ok){ closeSeatSheet(); }
+        }
+      };
+      rowSeats.appendChild(btn);
+    }
+  }
+
+  async function claimSeat(n){
+    const seatRef = ref(db, `rooms/${state.code}/seats/${n}`);
+    try{
+      const res = await runTransaction(seatRef, cur=>{
+        if (!cur || cur.uid === state.uid){ return { uid: state.uid, name: state.name, at: Date.now() }; }
+        return cur;
+      }, {applyLocally:false});
+      if (!res.committed || res.snapshot.val()?.uid !== state.uid){
+        alert(`席${n} は使用中です。`); return false;
+      }else{
+        if (state.mySeat && state.mySeat !== n){
+          await remove(ref(db, `rooms/${state.code}/seats/${state.mySeat}`));
+        }
+        return true;
+      }
+    }catch(e){ console.error(e); alert('着席に失敗しました。'); return false; }
+  }
+  async function releaseMySeat(){
+    if (!state.mySeat) return;
+    try{ await remove(ref(db, `rooms/${state.code}/seats/${state.mySeat}`)); }catch(_e){}
+  }
+
+  // 相対配置（時計回り）
+  function seatedList(){
+    return Object.entries(state.seats)
+      .filter(([_,v])=>v && v.uid)
+      .map(([k,v])=>({ seat:Number(k), uid:v.uid, name:v.name||'?' }))
+      .sort((a,b)=>a.seat-b.seat);
+  }
+  function clockwiseOthers(){
+    if (!state.mySeat) return [];
+    const N = state.playersN || 4;
+    return seatedList()
+      .filter(s=>s.seat!==state.mySeat)
+      .sort((a,b)=> ((a.seat - state.mySeat + 10) % N) - ((b.seat - state.mySeat + 10) % N));
+  }
+  function computeABCPositions(){
+    const arr = clockwiseOthers();
+    const N = state.playersN || 4;
+    const map = {};
+    if (arr[0]) map.B = arr[0];         // 次 = 右
+    if (N === 3){
+      if (arr[1]) map.A = arr[1];       // 残り = 左
+    }else{
+      if (arr[1]) map.C = arr[1];       // 次々 = 上
+      if (arr[2]) map.A = arr[2];       // 次々々 = 左
+    }
+    return map;
+  }
+  function getDealForSeat(seatNumber){
+    return state.deal?.[String(seatNumber)] || [];
+  }
+
+  // 扇描画（全員同一設定：上向き/同角度配分/同半径）
+  function getOppCardDims(){
+    const s = getComputedStyle(document.documentElement);
+    const w = Math.round(parseFloat(s.getPropertyValue('--card-w-opp')) || 26);
+    const h = Math.round(w / 0.714);
+    return { w, h };
+  }
+  /**
+   * renderFan(container, count, { maxSpreadDeg=56, radius=70 })
+   * すべて“上向き”固定（container は rotate しない）
+   */
+  function renderFan(container, count, options={}){
+    const maxSpreadDeg = options.maxSpreadDeg ?? 56;
+    const radius       = options.radius ?? 70;
+
+    // “上向き統一”なので rotate は入れない
+    container.style.transform = `translate(-50%,-50%)`;
+    container.innerHTML = '';
+    if (count <= 0) return;
+
+    const step  = count > 1 ? (maxSpreadDeg / (count - 1)) : 0;
+    const start = -maxSpreadDeg/2;
+    const { w, h } = getOppCardDims();
+
+    for (let i=0; i<count; i++){
+      const angle = start + step * i;        // 1枚ずつ角度が異なる
+      const card = document.createElement('div');
+      card.className = 'card opp';
+      card.style.width  = w + 'px';
+      card.style.height = h + 'px';
+      card.style.transform = `rotate(${angle}deg) translateY(-${radius}px) translateZ(0)`;
+      card.style.zIndex = String(1000 + i);
+      container.appendChild(card);
+    }
+  }
+
+  // 描画
+  function renderAll(){
+    renderHands();
+    renderPlays();
+  }
+  function renderHands(){
+    handBar.innerHTML = '';
+
+    // 相手枠初期化
+    for (const opp of [oppA, oppB, oppC]){
+      const label = opp.querySelector('.label');
+      const badge = opp.querySelector('.badge');
+      const fan   = opp.querySelector('.fan');
+      if (label) label.textContent = opp === oppA ? 'A' : opp === oppB ? 'B' : 'C';
+      if (badge) badge.textContent = opp === oppA ? 'A' : opp === oppB ? 'B' : 'C';
+      if (fan)   fan.innerHTML = '';
+    }
+
+    if (!state.mySeat){
+      oppA.classList.add('hidden'); oppB.classList.add('hidden'); oppC.classList.add('hidden');
+      return;
+    }
+
+    // 自分の手札
+    const myCards = getDealForSeat(state.mySeat);
+    for (const n of myCards){
+      const el = document.createElement('div');
+      el.className = 'card';
+      el.textContent = String(n);
+      el.title = 'クリックで場に出す';
+      el.onclick = ()=> playCard(n);
+      handBar.appendChild(el);
+    }
+
+    // 相手（3座席とも同一設定で扇描画）
+    const rel = computeABCPositions();
+    const seatToCount = seat => getDealForSeat(seat).length;
+
+    if (rel.A){
+      oppA.classList.remove('hidden');
+      const badge = oppA.querySelector('.badge'); if (badge) badge.textContent = `${rel.A.name}（席${rel.A.seat}）`;
+      renderFan(oppA.querySelector('.fan'), seatToCount(rel.A.seat));
+    }else{ oppA.classList.add('hidden'); }
+
+    if (rel.B){
+      oppB.classList.remove('hidden');
+      const badge = oppB.querySelector('.badge'); if (badge) badge.textContent = `${rel.B.name}（席${rel.B.seat}）`;
+      renderFan(oppB.querySelector('.fan'), seatToCount(rel.B.seat));
+    }else{ oppB.classList.add('hidden'); }
+
+    if (rel.C){
+      oppC.classList.remove('hidden');
+      const badge = oppC.querySelector('.badge'); if (badge) badge.textContent = `${rel.C.name}（席${rel.C.seat}）`;
+      renderFan(oppC.querySelector('.fan'), seatToCount(rel.C.seat));
+    }else{ oppC.classList.add('hidden'); }
+  }
+
+  // “場”
+  async function playCard(n){
+    try{
+      await set(ref(db, `rooms/${state.code}/plays/${state.uid}`), n);
+    }catch(e){ console.error(e); }
+  }
+  function renderPlays(){
+    playMine.innerHTML = '';
+    const myN = state.plays[state.uid];
+    if (myN){
+      const c = document.createElement('div');
+      c.className='card play';
+      c.textContent = String(myN);
+      playMine.appendChild(c);
+    }
+
+    playA.innerHTML = '';
+    playB.innerHTML = '';
+    playC.innerHTML = '';
+
+    if (!state.mySeat) return;
+    const rel = computeABCPositions();
+
+    const drawAt = (slotEl, r)=>{
+      if (!r) return;
+      const n = state.plays[r.uid];
+      if (!n) return;
+      const c = document.createElement('div'); c.className='card play'; c.textContent = String(n);
+      slotEl.appendChild(c);
+    };
+    drawAt(playA, rel.A);
+    drawAt(playB, rel.B);
+    drawAt(playC, rel.C);
+  }
+
+  // 離脱時
+  window.addEventListener('beforeunload', ()=>{
+    if (!state.joined) return;
+    if (state.mySeat){ remove(ref(db, `rooms/${state.code}/seats/${state.mySeat}`)).catch(()=>{}); }
+  });
+</script>
+</body>
+</html>
