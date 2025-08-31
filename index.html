@@ -173,7 +173,20 @@ background: url("kakapocardback.jpg") center/cover no-repeat;
   }
   .victoryArea .title{ font-size:12px; opacity:.8; font-weight:700; }
   .victoryArea .cardbox{ transform: scale(1.2); }
-
+/* 左上：ダブルスキャン・ポップ */
+.doubleScan{
+  position:fixed; left: calc(12px + 140px); top:12px; z-index:51;
+  display:flex; align-items:flex-start; gap:8px;
+  background:rgba(255,255,255,.98); border:1px solid #eee; border-radius:12px; padding:8px 10px;
+  box-shadow:0 6px 20px rgba(0,0,0,.12);
+}
+.doubleScan .title{
+  font-weight:800; font-size:12px; opacity:.85; white-space:nowrap; margin-top:4px;
+}
+.doubleScan .body{
+  display:flex; align-items:center; gap:8px;
+}
+.doubleScan .cardbox{ transform: scale(.9); }
   /* 左下：次ラウンド（緑枠＋白文字「次ラウンド」のみ） */
   .nextPanel{
     position:fixed; left:12px; bottom:12px; z-index:55;
@@ -406,6 +419,14 @@ background: url("kakapocardback.jpg") center/cover no-repeat;
   <div class="title"><div id="victTitle">ディシジョンカード</div></div>
   <div id="victoryCardBox"></div>
 </div>
+<!-- ダブルスキャン・ポップ -->
+<div id="doubleScanPop" class="doubleScan hidden" role="status" aria-live="polite">
+  <div class="title">ダブルスキャン</div>
+  <div id="doubleScanBody" class="body"></div>
+  <!-- 中身は JS で (色・最小カード) を描画 -->
+  <!-- 次ラウンドで自動的に消える -->
+</div>
+
 
 <!-- 左下：次ラウンド -->
 <div id="nextPanel" class="nextPanel hidden">
@@ -523,7 +544,9 @@ background: url("kakapocardback.jpg") center/cover no-repeat;
   const victoryCardBox= document.getElementById('victoryCardBox');
   const nextPanel     = document.getElementById('nextPanel');
   const btnNextRound  = document.getElementById('btnNextRound');
-
+  // DoubleScan UI
+  const doubleScanPop  = document.getElementById('doubleScanPop');
+  const doubleScanBody = document.getElementById('doubleScanBody');
   // ボトムシート
   const seatSheet   = document.getElementById('seatSheet');
   const rowTop      = document.getElementById('rowTop');
@@ -721,7 +744,17 @@ background: url("kakapocardback.jpg") center/cover no-repeat;
       updateHeader();
       renderAll();
       renderVictoryWidgets(); // ← 中央ピース描画もここで
+renderDoubleScan();     // ← ダブルスキャン・ポップを同期描画
     });
+
+    // 次ラウンド時：ダブルスキャンを消去（他処理と併存可）
+    btnNextRound?.addEventListener('click', async ()=>{
+      try{
+        const room = `rooms/${state.code}`;
+        await update(ref(db), { [`${room}/game/doubleScan`]: null });
+      }catch(_e){}
+    });
+
   }
 
   // ===== 40枚デッキの生成・シャッフル・配布 =====
@@ -747,6 +780,28 @@ background: url("kakapocardback.jpg") center/cover no-repeat;
     }
     return 1;
   }
+
+function renderDoubleScan(){
+  if (!doubleScanPop || !doubleScanBody) return;
+  const g = state.game || {};
+  const ds = g.doubleScan || null;
+
+  // 今ラウンド以外の記録は表示しない
+  if (!ds || ds.round !== (g.round || 1)){
+    doubleScanBody.innerHTML = '';
+    doubleScanPop.classList.add('hidden');
+    return;
+  }
+
+  // 中身を組み立て（色＋最小カードをミニカードで表示）
+  doubleScanBody.innerHTML = '';
+  const mini = makeCardFaceEl(ds.cardId);
+  mini.classList.add('sm');
+  doubleScanBody.appendChild(mini);
+
+  doubleScanPop.classList.remove('hidden');
+}
+
 
   function seatUid(seatNum){
     return state.seats?.[String(seatNum)]?.uid || null;
@@ -1242,8 +1297,32 @@ function renderDiscardPopup(){
         wrapEl.style.pointerEvents = 'auto';
 
         wrapEl.addEventListener('click', async ()=>{
-          await materializeCenterPieceFromWinner(playObj);
-        }, { once:true });
+          // ① 今ラウンドの最小カードを計算して /game/doubleScan に記録
+          try{
+            const g = state.game || {};
+            const room = `rooms/${state.code}`;
+            const arr = playsOfCurrentRound(); // 今ラウンドの場の全カード
+            if (arr.length){
+              // index（数字）が最小のものを採用（同値なら COLOR_ORDER 順）
+              const order = COLOR_ORDER;
+              arr.sort((a,b)=>{
+                if (a.index !== b.index) return a.index - b.index;
+                return order.indexOf(a.color) - order.indexOf(b.color);
+              });
+              const min = arr[0];
+              const rec = {
+                cardId: min.cardId,
+                color:  min.color,
+                index:  min.index,
+                round:  g.round || 1,
+                ts:     Date.now()
+              };
+              await update(ref(db), { [`${room}/game/doubleScan`]: rec });
+            }
+          }catch(_e){}
+
+          // ② 中央ピース生成（従来どおり）
+          await materializeCenterPieceFromWinner(playObj);        }, { once:true });
       }
     };
 
