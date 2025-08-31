@@ -271,6 +271,7 @@ background: url("kakapocardback.jpg") center/cover no-repeat;
   height:var(--cell-size);
 }
 
+
 </style>
 </head>
 <body>
@@ -748,16 +749,62 @@ prevVictoryColor: 'purple',
     try{
       const res = await runTransaction(seatRef, cur=>{ if (!cur || cur.uid === state.uid){ return { uid: state.uid, name: state.name, at: Date.now() }; } return cur; }, {applyLocally:false});
       if (!res.committed || res.snapshot.val()?.uid !== state.uid){ alert(`席${n} は使用中です。`); return false; }
-      else{
-        if (state.mySeat && state.mySeat !== n){
-          await remove(ref(db, `rooms/${state.code}/seats/${state.mySeat}`));
+     else{
+      // --- ここから同期ロジック：座席→uid（再入室でuidが変わった対策） ---
+      try{
+        const room = `rooms/${state.code}`;
+        const g = state.game || {};
+       const updates = {};
+
+        // 1) スタート席のuidが古い場合：今の着席者(uid)に置き換え
+        if (g.startSeat && g.startSeat === n && g.startUid !== state.uid){
+          updates[`${room}/game/startUid`] = state.uid;
         }
-        return true;
-      }
+
+        // 2) 手番の席を再計算して、該当席なら turnUid も自分に置き換え
+        //    （orderSeats と 今ラウンドのプレイ数から「今手番の席」を決める）
+        const N = g.playersN || state.playersN || 0;
+        if (N && Array.isArray(g.orderSeats) && g.orderSeats.length === N){
+          // 今ラウンドに確定しているプレイ数
+          const playsNow = Object.values(state.plays || {}).filter(p => Number(p?.round) === (g.round||1)).length;
+          const expectedSeat = g.orderSeats[playsNow % N];  // いま手番の席番号
+          if (expectedSeat === n){
+           updates[`${room}/game/turnUid`] = state.uid;
+          }
+        } else {
+          // フォールバック：turnUid が未設定か古いuidで座席に不在なら、自分に移譲
+          const turnSeat = (g.turnUid && (Object.entries(state.seats||{}).find(([k,v])=>v?.uid===g.turnUid)?.[0] | 0)) || 0;
+          if (!g.turnUid || !turnSeat){
+            updates[`${room}/game/turnUid`] = state.uid;
+          }
+        }
+
+        if (Object.keys(updates).length){
+          await update(ref(db), updates);
+        }
+      }catch(_e){}
+      // --- 同期ロジックここまで ---
+      return true;      }
     }catch(e){ console.error(e); alert('着席に失敗しました。'); return false; }
   }
-  async function releaseMySeat(){ if (!state.mySeat) return; try{ await remove(ref(db, `rooms/${state.code}/seats/${state.mySeat}`)); }catch(_e){} }
+  async function releaseMySeat(){
+    if (!state.mySeat) return;
+    const room = `rooms/${state.code}`;
+    const g = state.game || {};
+    const r = g.round || 1;
+    const my = state.plays?.[state.uid];
+    const isRoundOpen = !(g?.victory && g.victory.round === r && g.victory.uid);
 
+    try{
+     // まず座席を外す
+      await remove(ref(db, `${room}/seats/${state.mySeat}`));
+
+      // 勝者未確定かつ「今ラウンドの自分の記録」かつ seat が離席前の席番号なら掃除
+      if (isRoundOpen && my && Number(my.round) === r && Number(my.seat) === Number(state.mySeat)) {
+        await remove(ref(db, `${room}/plays/${state.uid}`));
+      }
+    }catch(_e){}
+  }
   async function maybeFillStartFromSeat(){
     const room = `rooms/${state.code}`;
     const g = state.game || {};
