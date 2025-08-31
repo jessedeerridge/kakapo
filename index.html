@@ -271,6 +271,61 @@ background: url("kakapocardback.jpg") center/cover no-repeat;
   height:var(--cell-size);
 }
 
+/* 左下：捨て札（ゴミ箱） */
+.trashPanel{
+  position:fixed; left:12px; bottom:60px; z-index:55;
+  display:flex; align-items:center; justify-content:center;
+}
+.trashBtn{
+  width:44px; height:44px; border-radius:50%;
+  border:1px solid #ddd; background:#fff; cursor:pointer;
+  box-shadow:0 4px 12px rgba(0,0,0,.12);
+  font-size:20px; line-height:1; display:flex; align-items:center; justify-content:center;
+}
+.trashPopup{
+  position:fixed; left:12px; bottom:112px; z-index:60;
+  width:min(520px, 92vw); max-height:60vh; overflow:auto;
+  background:rgba(255,255,255,.98); border:1px solid #eee; border-radius:12px; padding:8px 10px;
+  box-shadow:0 10px 30px rgba(0,0,0,.18);
+}
+.trashPopup.hidden{ display:none !important; }
+.trashPopup .head{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+.trashPopup .rows{ display:flex; flex-direction:column; gap:6px; }
+.trashPopup .row{ display:flex; align-items:center; gap:6px; }
+.trashPopup .label{ min-width:56px; font-weight:700; text-transform:capitalize; opacity:.8; }
+.trashPopup .cards{ display:flex; gap:4px; overflow-x:auto; padding:4px 2px; }
+.trashPopup{
+  height: 62vh;          /* 画面高さいっぱい（スクロール不要にする） */
+  max-height: 62vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+.trashPopup .content{
+  flex: 1;
+  overflow: hidden;      /* スクロール禁止 */
+}
+/* 捨て札ポップアップ内の行間を詰める */
+.trashPopup .row{
+  margin: 2px 0;    /* 上下の間隔を狭く */
+  padding: 0;
+}
+
+/* 行内のカードの上下余白をなくす */
+.trashPopup .cards{
+  margin: 0;
+  padding: 0;
+  gap: 2px;         /* カード間の隙間も少し狭める（必要なら） */
+}
+
+
+/* 小さなカード（捨て札表示用） */
+.cardbox.sm{ width:var(--card-w); }
+
+.cardbox.dimmed{
+  opacity: .28;
+  filter: brightness(75%); /* 少し暗めにする */
+}
 
 </style>
 </head>
@@ -345,6 +400,19 @@ background: url("kakapocardback.jpg") center/cover no-repeat;
   <button id="btnNextRound" class="nextBtn" title="次ラウンド">次ラウンド</button>
 </div>
 
+<!-- 左下：捨て札（ゴミ箱） -->
+<div id="trashPanel" class="trashPanel hidden">
+  <button id="btnTrash" class="trashBtn" title="捨て札">🗑️</button>
+</div>
+
+<!-- 捨て札ポップアップ -->
+<div id="trashPopup" class="trashPopup hidden" role="dialog" aria-label="捨て札">
+  <div class="head">
+  </div>
+  <div id="trashContent" class="rows"></div>
+</div>
+
+
 <!-- 右下：設定 -->
 <button id="fabOpenSeat" class="fab" title="設定 / 座席選択" aria-label="設定">⚙️</button>
 
@@ -395,6 +463,20 @@ background: url("kakapocardback.jpg") center/cover no-repeat;
   const playA    = document.getElementById('playA');
   const playB    = document.getElementById('playB');
   const playC    = document.getElementById('playC');
+  // 捨て札UI
+  const trashPanel   = document.getElementById('trashPanel');
+  const btnTrash     = document.getElementById('btnTrash');
+  const trashPopup   = document.getElementById('trashPopup');
+  const trashClose   = document.getElementById('trashClose');
+  const trashContent = document.getElementById('trashContent');
+
+  btnTrash?.addEventListener('click', ()=>{
+    const opening = trashPopup.classList.contains('hidden');
+    if (opening) renderDiscardPopup();
+    show(trashPopup, opening);
+  });
+  trashClose?.addEventListener('click', ()=> show(trashPopup, false));
+  document.addEventListener('keydown', e=>{ if (e.key==='Escape') show(trashPopup, false); });
 
   // 中央レイヤ
   const centerGrid  = document.getElementById('centerGrid');   // 背景の12x12罫線
@@ -480,7 +562,8 @@ background: url("kakapocardback.jpg") center/cover no-repeat;
     hands: {},         // { "1":[cardId,...], ... }
     plays: {},         // { uid: {cardId,color,index,seat,round,ts} }
     game: {},          // ラウンド進行のメタ
-  };
+    graveyard: {}      // ★ 追加：{ red:[id...], blue:[id...], ... }  
+};
 
   // 追加：スキル選択フェーズ（今回は “なし/通常” のみ想定）
   const skillMode = 'none';
@@ -546,6 +629,8 @@ background: url("kakapocardback.jpg") center/cover no-repeat;
 
     wireRoom();
     openSeatSheet();
+    show(trashPanel, true);  // ← 入室後に表示
+
   }
   btnJoin.onclick = join;
 
@@ -583,6 +668,13 @@ background: url("kakapocardback.jpg") center/cover no-repeat;
     });
 
     onValue(ref(db, `${room}/hands`), snap=>{ state.hands = snap.val() || {}; renderAll(); });
+
+    onValue(ref(db, `${room}/graveyard`), snap=>{
+      state.graveyard = snap.val() || {};
+      // 開いているときは即時再描画
+      if (!trashPopup.classList.contains('hidden')) renderDiscardPopup();
+    });
+
 
     onValue(ref(db, `${room}/seats`), snap=>{
       state.seats = snap.val() || {};
@@ -1000,6 +1092,42 @@ function isRoundClosed(){
     return new Set(my.filter(id => parseCardId(id).color === sc));
   }
 
+
+function renderDiscardPopup(){
+  if (!trashContent) return;
+  trashContent.innerHTML = '';
+
+  const gy = state.graveyard || {};          // { red:[id...], ... }
+  const colors = COLOR_ORDER;                // ['red','blue','green','yellow','purple']
+
+  for (const color of colors){
+    const row = document.createElement('div');
+    row.className = 'row';
+
+    const cards = document.createElement('div');
+    cards.className = 'cards';
+
+    // 全カードを 1-8 で並べる（紫0は対象外）
+    for (let i = 1; i <= 8; i++){
+      const id = `${color}-${i}`;
+      const box = makeCardFaceEl(id);
+      box.classList.add('sm');
+
+      // 捨て札に無いカードは薄く
+      const discardedList = gy[color] || [];
+      const isDiscarded = discardedList.includes(id);
+      if (!isDiscarded) box.classList.add('dimmed');
+
+      cards.appendChild(box);
+    }
+
+    row.appendChild(cards);
+    trashContent.appendChild(row);
+  }
+}
+
+
+
   // UI 全体描画
   function renderAll(){
     renderHands();
@@ -1352,6 +1480,28 @@ async function materializeCenterPieceFromWinner(winnerPlay){
     ts:     Date.now()
   };
 
+
+  {
+    const curRound = g.round || 1;
+    const playsObj = state.plays || {};
+    const arr = Object.values(playsObj).filter(p => (p?.round || curRound) === curRound);
+    const byColor = {};
+    for (const p of arr){
+      if (!p?.cardId || !p?.color) continue;
+      (byColor[p.color] ||= []).push(p.cardId);
+    }
+    // 既存の捨て札に追記（配列を後ろに連結）
+    if (Object.keys(byColor).length){
+      await runTransaction(ref(db, `${room}/graveyard`), cur=>{
+        const out = cur || {};
+        for (const c of Object.keys(byColor)){
+          out[c] = Array.isArray(out[c]) ? out[c].concat(byColor[c]) : byColor[c].slice();
+        }
+        return out;
+      }, { applyLocally:false });
+    }
+  }
+
   await update(ref(db), {
     [`${room}/plays`]: null,
   [`${room}/game/centerPieces/${g.round || 1}`]: centerPieceObj,
@@ -1426,20 +1576,21 @@ function enablePieceDragRotate(el, savePath){
     }
 
     // 左下：次ラウンド（ホストのみ・勝者確定後）
-    const shouldShowNext = !!(v && v.round === g.round && isHost());
-    show(nextPanel, shouldShowNext);
+const shouldShowNext = !!(v && v.round === g.round && v.uid === state.uid);    show(nextPanel, shouldShowNext);
 
     // ★ 中央ピース（常に同期描画）
 renderCenterPiecesNow();
   }
 
-  // 次ラウンド開始：ホスト操作（★ 中央ピースは消さない＝保持）
+  // 次ラウンド開始：★ 勝者またはホストが押せる（中央ピースは消さない＝保持）
   btnNextRound.addEventListener('click', async ()=>{
-    if (!isHost()) return;
     const g = state.game || {};
     const v = g.victory;
-    if (!v) return;
-
+    // 勝者確定していて、かつ今ラウンドの勝者か？
+    if (!v || v.round !== g.round) return;
+    // 実行権限：勝者本人 or ホスト
+    const canProceed = (v.uid === state.uid) || isHost();
+    if (!canProceed) return;
     const room = `rooms/${state.code}`;
     const N = g.playersN || 0;
 
