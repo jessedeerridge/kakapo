@@ -327,6 +327,18 @@ background: url("kakapocardback.jpg") center/cover no-repeat;
   filter: brightness(75%); /* 少し暗めにする */
 }
 
+/* ★ 追加：やり直しポップ */
+.redoPopup{
+  position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
+  z-index:70; background:rgba(255,255,255,.98); border:1px solid #eee; border-radius:12px;
+  box-shadow:0 10px 30px rgba(0,0,0,.18); padding:10px 12px; min-width:260px;
+}
+.redoPopup.hidden{ display:none !important; }
+.redoPopup .body{ display:flex; flex-direction:column; gap:10px; align-items:center; }
+.redoPopup .txt{ font-weight:700; }
+.redoPopup .actions{ display:flex; gap:8px; }
+
+
 </style>
 </head>
 <body>
@@ -410,6 +422,17 @@ background: url("kakapocardback.jpg") center/cover no-repeat;
   <div class="head">
   </div>
   <div id="trashContent" class="rows"></div>
+</div>
+
+<!-- ★ 追加：ピース編集ポップ（やり直し） -->
+<div id="redoPopup" class="redoPopup hidden" role="dialog" aria-label="ピース編集">
+  <div class="body">
+    <div class="txt">このピースをやり直しますか？</div>
+    <div class="actions">
+      <button id="redoOk" class="btn">やり直す</button>
+      <button id="redoCancel" class="btn ghost">閉じる</button>
+    </div>
+  </div>
 </div>
 
 
@@ -562,7 +585,8 @@ background: url("kakapocardback.jpg") center/cover no-repeat;
     hands: {},         // { "1":[cardId,...], ... }
     plays: {},         // { uid: {cardId,color,index,seat,round,ts} }
     game: {},          // ラウンド進行のメタ
-    graveyard: {}      // ★ 追加：{ red:[id...], blue:[id...], ... }  
+    graveyard: {},      // ★ 追加：{ red:[id...], blue:[id...], ... }  
+    editingRound: null // ★ 追加：いま「やり直し」編集中のラウンド番号（nullで未編集）
 };
 
   // 追加：スキル選択フェーズ（今回は “なし/通常” のみ想定）
@@ -1401,10 +1425,53 @@ function renderCenterPiecesNow(){
     applyPieceTransform(host, cp);
     container.appendChild(host);
 
-    // 当ラウンド勝者のピースだけ操作可能（旧仕様を踏襲）
+  // ★ 追加：やり直しポップ要素
+  const redoPopup   = document.getElementById('redoPopup');
+  const redoOk      = document.getElementById('redoOk');
+  const redoCancel  = document.getElementById('redoCancel');
+
+  function openRedoPopup(round){
+    state.editingRound = round;              // 押下対象ラウンドを事前に記録
+    redoPopup.classList.remove('hidden');
+  }
+  function closeRedoPopup(){
+    redoPopup.classList.add('hidden');
+  }
+
+  // ボタン動作
+  redoOk?.addEventListener('click', ()=>{
+    // “やり直す” → 画面再描画で、そのラウンドのピースにドラッグ＆反転ハンドルを付ける
+    renderCenterPiecesNow();
+    closeRedoPopup();
+  });
+  redoCancel?.addEventListener('click', ()=>{
+    // キャンセル → ラウンド記録は消す
+    state.editingRound = null;
+    closeRedoPopup();
+  });
+  document.addEventListener('keydown', e=>{
+    if (e.key === 'Escape' && !redoPopup.classList.contains('hidden')){
+      state.editingRound = null;
+      closeRedoPopup();
+    }
+  });
+
+
+    // ★ 変更：自分の勝利ピースは「当ラウンド」または「やり直し対象ラウンド」なら操作可
     const isCurrentRound = (round === (g.round || 1));
     const isMyWinPiece   = (cp.uid === myUid());
-    if (isCurrentRound && isMyWinPiece){
+    const allowOps = isMyWinPiece && (isCurrentRound || state.editingRound === round);
+
+    // ★ 自分のピースをクリック → “やり直し”ポップ（いつでも）
+    if (isMyWinPiece){
+      host.style.cursor = 'pointer';
+      host.addEventListener('click', (e)=>{
+        // 既に操作可能ならそのまま（ポップ不要）。操作不可のときだけ出す。
+        if (!allowOps) { e.stopPropagation(); openRedoPopup(round); }
+      });
+    }
+
+    if (allowOps){
       // 反転ボタン
       const handles=document.createElement('div');
       handles.className='cp-handles';
@@ -1426,8 +1493,8 @@ function renderCenterPiecesNow(){
         await update(ref(db), { [`${roundPath}/flipY`]: cur });
       };
 
-      // ドラッグ＆クリック回転（90°）も当ラウンド分だけ
-      enablePieceDragRotate(host, roundPath);
+      // ★ 変更：任意ラウンドの保存先を渡しつつ、round を明示
+      enablePieceDragRotate(host, roundPath, round);
     }
   }
 }
@@ -1510,7 +1577,7 @@ async function materializeCenterPieceFromWinner(winnerPlay){
 }
 
 
-function enablePieceDragRotate(el, savePath){
+function enablePieceDragRotate(el, savePath, roundOverride){
   let dragging=false, moved=false;
   let sx=0, sy=0, ox=0, oy=0;
 
@@ -1518,8 +1585,8 @@ function enablePieceDragRotate(el, savePath){
     if (e.target.classList.contains('flip-btn')) return;
     el.setPointerCapture(e.pointerId);
     const g = state.game || {};
-    // 現状値を読む（当ラウンドのピース）
-    const cp = (g.centerPieces && g.centerPieces[g.round||1]) || {};
+    const r = Number(roundOverride) || (g.round || 1);
+    const cp = (g.centerPieces && g.centerPieces[r]) || {};
     sx = e.clientX; sy = e.clientY;
     ox = cp.x || 0; oy = cp.y || 0;
     dragging = true; moved = false;
@@ -1532,7 +1599,8 @@ function enablePieceDragRotate(el, savePath){
     if (!moved && Math.hypot(dx,dy) > 3) moved = true;
     // ローカル見た目だけ先に反映
     const g = state.game || {};
-    const cp = (g.centerPieces && g.centerPieces[g.round||1]) ? {...g.centerPieces[g.round||1]} : {};
+    const r = Number(roundOverride) || (g.round || 1);
+    const cp = (g.centerPieces && g.centerPieces[r]) ? { ...(g.centerPieces[r]) } : {};
     cp.x = ox + dx; cp.y = oy + dy;
     applyPieceTransform(el, cp);
   };
@@ -1546,9 +1614,10 @@ function enablePieceDragRotate(el, savePath){
     const movedEnough = Math.hypot(dx,dy) > 3;
 
     if (!movedEnough){
-      // クリック扱い → 90°回転
+      // クリック扱い → 90°回転（対象ラウンドのcp角度を基準に）
       const g = state.game || {};
-      const cp = (g.centerPieces && g.centerPieces[g.round||1]) || {};
+      const r = Number(roundOverride) || (g.round || 1);
+      const cp = (g.centerPieces && g.centerPieces[r]) || {};
       const next = ((cp.angle||0) + 90) % 360;
       await update(ref(db), { [`${savePath}/angle`]: next });
     } else {
@@ -1586,6 +1655,35 @@ renderCenterPiecesNow();
   btnNextRound.addEventListener('click', async ()=>{
     const g = state.game || {};
     const v = g.victory;
+
+  // ★ やり直し解除処理
+  if (state.editingRound !== null){
+    state.editingRound = null;
+    // ポップを閉じる
+    show(document.getElementById('redoPopup'), false);
+
+    // いま表示中の centerPiece を取得して保存
+    const cpEls = centerPiece.querySelectorAll('.center-piece');
+    cpEls.forEach(async el=>{
+      const round = el.dataset.round;
+      if (!round) return;
+      const cp = {
+        color: el.dataset.color,
+        index: Number(el.dataset.index),
+        round: Number(round),
+        x: parseFloat(el.dataset.x)||0,
+        y: parseFloat(el.dataset.y)||0,
+        angle: parseFloat(el.dataset.angle)||0,
+        flipX: parseFloat(el.dataset.flipX)||1,
+        flipY: parseFloat(el.dataset.flipY)||1,
+        ts: Date.now()
+      };
+      await update(ref(db), {
+        [`${room}/game/centerPieces/${round}`]: cp
+      });
+    });
+  }
+
     // 勝者確定していて、かつ今ラウンドの勝者か？
     if (!v || v.round !== g.round) return;
     // 実行権限：勝者本人 or ホスト
