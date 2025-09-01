@@ -390,6 +390,8 @@ background: url("kakapocardback.jpg") center/cover no-repeat;
     <div id="hostBar" class="hostbar hidden">
       <span id="hostInfo">ホスト未設定</span>
       <button id="btnBecomeHost" class="btn">ホストになる</button>
+      <button id="btn1p" class="btn ghost">1人プレイ</button>
+      <button id="btn2p" class="btn ghost">2人プレイ</button>
       <button id="btn3p" class="btn ghost">3人プレイ</button>
       <button id="btn4p" class="btn ghost">4人プレイ</button>
     </div>
@@ -716,12 +718,16 @@ background: url("kakapocardback.jpg") center/cover no-repeat;
       state.hostUid = st.hostUid || null;
       state.playersN = st.players || null;
       const hostBar = document.getElementById('hostBar');
+      const btn1 = document.getElementById('btn1p');
+      const btn2 = document.getElementById('btn2p');
       const btn3 = document.getElementById('btn3p');
       const btn4 = document.getElementById('btn4p');
       const btnHost = document.getElementById('btnBecomeHost');
       const hostInfo = document.getElementById('hostInfo');
       if (hostBar){ hostBar.style.display = 'block'; }
       if (btnHost){ btnHost.onclick = async()=>{ await set(ref(db, `${room}/settings/hostUid`), state.uid); }; }
+      if (btn1){ btn1.onclick = async ()=>{ await setPlayersAndDeal(1); }; }
+      if (btn2){ btn2.onclick = async ()=>{ await setPlayersAndDeal(2); }; }
       if (btn3){ btn3.onclick = async ()=>{ await setPlayersAndDeal(3); }; }
       if (btn4){ btn4.onclick = async ()=>{ await setPlayersAndDeal(4); }; }
       if (hostInfo){ hostInfo.textContent = `ホスト：${st.hostUid ? (st.hostUid===state.uid?'あなた':st.hostUid.slice(0,4)) : '未設定'}`; }
@@ -987,9 +993,11 @@ prevVictoryColor: 'purple',
     rowTop.innerHTML = '';
     if (isHost){
       const seg = document.createElement('div'); seg.className = 'seg';
-      const btn3 = document.createElement('button'); btn3.className = 'segbtn' + (state.playersN===3 ? ' active':''); btn3.textContent = '3人'; btn3.onclick = async ()=>{ await setPlayersAndDeal(3); };
-      const btn4 = document.createElement('button'); btn4.className = 'segbtn' + (state.playersN===4 ? ' active':''); btn4.textContent = '4人'; btn4.onclick = async ()=>{ await setPlayersAndDeal(4); };
-      seg.appendChild(btn3); seg.appendChild(btn4);
+      const btn1 = document.createElement('button'); btn1.className = 'segbtn' + (state.playersN===1 ? ' active':''); btn1.textContent = '1人'; btn1.onclick = async ()=>{ await setPlayersAndDeal(1); };      
+const btn2 = document.createElement('button'); btn2.className = 'segbtn' + (state.playersN===2 ? ' active':''); btn2.textContent = '2人'; btn2.onclick = async ()=>{ await setPlayersAndDeal(2); };      
+const btn3 = document.createElement('button'); btn3.className = 'segbtn' + (state.playersN===3 ? ' active':''); btn3.textContent = '3人'; btn3.onclick = async ()=>{ await setPlayersAndDeal(3); };
+const btn4 = document.createElement('button'); btn4.className = 'segbtn' + (state.playersN===4 ? ' active':''); btn4.textContent = '4人'; btn4.onclick = async ()=>{ await setPlayersAndDeal(4); };
+      seg.appendChild(btn1); seg.appendChild(btn2); seg.appendChild(btn3); seg.appendChild(btn4);
       const cap = document.createElement('div'); cap.className='muted'; cap.textContent='人数を選んだ時点で40枚をシャッフル配布します。次に座席を選んでください。';
       rowTop.appendChild(seg); rowTop.appendChild(cap);
     }else{
