@@ -1261,7 +1261,10 @@ function drawPieceEl(round, id, obj, interactive = true){
     sq.style.top  = (r * cell) + 'px';
     el.appendChild(sq);
   }
-
+  {
+    const { cx, cy } = pieceCenterCell(obj);
+   el.style.transformOrigin = `${(cx + 0.5) * cell}px ${(cy + 0.5) * cell}px`;
+  }
   // 位置＋回転/反転
   const px = obj.x * cell;
   const py = obj.y * cell;
@@ -1285,14 +1288,24 @@ function drawPieceEl(round, id, obj, interactive = true){
       b.addEventListener('pointerdown', e=>{ e.stopPropagation(); e.preventDefault(); });
     });
 
-    btnH.addEventListener('click', async (e)=>{
-      e.stopPropagation();
-      try{ await update(piecePath(round,id), { flipX: !obj.flipX, updatedAt: Date.now() }); }catch(_e){}
-    });
-    btnV.addEventListener('click', async (e)=>{
-      e.stopPropagation();
-      try{ await update(piecePath(round,id), { flipY: !obj.flipY, updatedAt: Date.now() }); }catch(_e){}
-    });
+btnH.addEventListener('click', async (e)=>{
+  e.stopPropagation();
+  const patch = { flipX: !obj.flipX };
+  const pos   = computeXYForNewTransform(obj, patch);
+  try{
+    await update(piecePath(round,id), { ...patch, ...pos, updatedAt: Date.now() });
+  }catch(_e){}
+});
+
+btnV.addEventListener('click', async (e)=>{
+  e.stopPropagation();
+  const patch = { flipY: !obj.flipY };
+  const pos   = computeXYForNewTransform(obj, patch);
+  try{
+    await update(piecePath(round,id), { ...patch, ...pos, updatedAt: Date.now() });
+  }catch(_e){}
+});
+
 
     handles.appendChild(btnH);
     handles.appendChild(btnV);
@@ -1322,15 +1335,12 @@ el.addEventListener('pointerup', async (e) => {
 
   // 小移動＆短時間 → クリック扱い（回転）
   if (dx < 4 && dy < 4 && dt < 300) {
-    const next = (((obj.angle || 0) + 90) % 360);
-    const baseW = obj.w || 1, baseH = obj.h || 1;
-    const rotW = (next % 180 === 0) ? baseW : baseH;
-    const rotH = (next % 180 === 0) ? baseH : baseW;
-    const x = Math.min(obj.x, 12 - rotW);
-    const y = Math.min(obj.y, 12 - rotH);
-    try{
-      await update(piecePath(round, id), { angle: next, x, y, updatedAt: Date.now() });
-    }catch(_e){}
+const next  = (((obj.angle || 0) + 90) % 360);
+const patch = { angle: next };
+const pos   = computeXYForNewTransform(obj, patch);
+try{
+  await update(piecePath(round, id), { ...patch, ...pos, updatedAt: Date.now() });
+} catch(_e){}
   }
 }, { passive: true });
 
@@ -1376,6 +1386,66 @@ function clampXY(x, y, w, h){
   const maxX = 12 - w;
   const maxY = 12 - h;
   return { x: Math.max(0, Math.min(maxX, x)), y: Math.max(0, Math.min(maxY, y)) };
+}
+
+
+/* ===== 追加: 中心アンカー＆はみ出し抑制ユーティリティ ===== */
+function pieceCenterCell(obj){
+  const cx = Math.floor(((obj?.w||1) - 1) / 2);
+  const cy = Math.floor(((obj?.h||1) - 1) / 2);
+  return { cx, cy };
+}
+
+function gridSizePx(){ return cellSize() * 12; }
+
+function pieceWorldCenterPx(obj){
+  const cell = cellSize();
+  const { cx, cy } = pieceCenterCell(obj);
+  return {
+    cxPx: (obj.x + cx + 0.5) * cell,
+    cyPx: (obj.y + cy + 0.5) * cell,
+    oxPx: (cx + 0.5) * cell,
+    oyPx: (cy + 0.5) * cell,
+  };
+}
+
+function rotatedHalfExtentsPx(obj){
+  const cell = cellSize();
+  const wPx = (obj?.w||1) * cell;
+  const hPx = (obj?.h||1) * cell;
+  const th  = ((obj?.angle||0) % 360) * Math.PI/180;
+  const c = Math.cos(th), s = Math.sin(th);
+  return {
+    halfW: (Math.abs(c)*wPx + Math.abs(s)*hPx) / 2,
+    halfH: (Math.abs(s)*wPx + Math.abs(c)*hPx) / 2,
+  };
+}
+
+function clampCenterPxToGrid(cxPx, cyPx, obj, overhangCells = 0){
+  const { halfW, halfH } = rotatedHalfExtentsPx(obj);
+  const W = gridSizePx(), H = W;
+  const cell = cellSize();
+  const margin = (overhangCells || 0) * cell; // ★ 追加: はみ出し許容（セル単位）
+  return {
+    cxPx: Math.min(W - halfW + margin, Math.max(halfW - margin, cxPx)),
+    cyPx: Math.min(H - halfH + margin, Math.max(halfH - margin, cyPx)),
+  };
+}
+
+
+function xyFromWorldCenter(nextObj, cxPx, cyPx){
+  const cell = cellSize();
+  const { oxPx, oyPx } = pieceWorldCenterPx({ ...nextObj, x:0, y:0 });
+  const x = Math.round((cxPx - oxPx) / cell);
+  const y = Math.round((cyPx - oyPx) / cell);
+  return { x, y };
+}
+
+function computeXYForNewTransform(oldObj, patch){
+  const nextObj = { ...oldObj, ...patch };
+  const { cxPx, cyPx } = pieceWorldCenterPx(oldObj);
+  const clamped = clampCenterPxToGrid(cxPx, cyPx, nextObj);
+  return xyFromWorldCenter(nextObj, clamped.cxPx, clamped.cyPx);
 }
 
 function pickMaxZ(r){
@@ -1444,14 +1514,23 @@ function onPiecePointerMove(ev, el, round, id, obj){
   const grid = getCenterRect();
   const cell = grid.width / 12;
 
+  // ★ 修正: 左上アンカーではなく「中心アンカー＋回転後外接矩形」で境界判定
   const anchorPxX = ev.clientX - grid.left - state.dragging.offPx.x;
   const anchorPxY = ev.clientY - grid.top  - state.dragging.offPx.y;
-  let cx = Math.round(anchorPxX / cell);
-  let cy = Math.round(anchorPxY / cell);
 
   const cur = state.centerPieces?.[r]?.[pid] || obj;
   if (!cur) return;
-  const { x, y } = clampXY(cx, cy, cur.w, cur.h);
+
+  // ピース中心のオフセット（左上→中心）
+  const { oxPx, oyPx } = pieceWorldCenterPx({ ...cur, x:0, y:0 });
+  const wantCxPx = anchorPxX + oxPx;
+  const wantCyPx = anchorPxY + oyPx;
+
+  // 2マスまではみ出し可能にして中心をクリップ
+  const clamped = clampCenterPxToGrid(wantCxPx, wantCyPx, cur, 2);
+
+  // クリップした中心座標からグリッド左上(x,y)へ戻す
+  const { x, y } = xyFromWorldCenter(cur, clamped.cxPx, clamped.cyPx);
 
   if (state.dragging.raf) cancelAnimationFrame(state.dragging.raf);
   state.dragging.raf = requestAnimationFrame(async ()=>{
