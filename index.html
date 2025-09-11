@@ -415,7 +415,49 @@
 
 
 
+/* ===== スマホ時：他プレイヤー手札 & 場の位置調整（上書き） ===== */
+@media (max-width: 600px){
+  :root{
+    /* まず全体の押し出し量を弱める（マイナスにすると内側に寄ります） */
+    --opp-shift: -10px;
 
+    /* ← ここを触れば “感覚的に” 位置調整できます（推奨: ここだけ触る） */
+    --opp-side-x: -118px;   /* A/B の左右位置（負の絶対値↑で外に、↓で内側に） */
+    --opp-side-y: 56%;      /* A/B の縦位置（50%でド真ん中） */
+    --opp-top-y: 8px;       /* C の上端からの距離 */
+
+    --play-side-x: 22px;    /* A/B の “場” の左右位置 */
+    --play-side-y: 64%;     /* A/B の “場” の縦位置 */
+    --play-top-y: 92px;     /* C の “場” の縦位置 */
+
+    /* バッジの位置（必要なら） */
+    --opp-badge-bottom: 76px;
+  }
+
+  /* 他プレイヤー手札（扇の土台ごと） */
+  .opp.A{ left: var(--opp-side-x); top: var(--opp-side-y); transform: translateY(-50%); }
+  .opp.B{ right:var(--opp-side-x); top: var(--opp-side-y); transform: translateY(-50%); }
+  .opp.C{ left: 50%; top: var(--opp-top-y); transform: translateX(-50%); }
+
+  /* バッジの微調整（必要なときだけ活きます） */
+  .opp .badge{ bottom: var(--opp-badge-bottom); }
+
+  /* 各プレイヤーの “場” の位置も合わせて寄せる */
+  .play-A{ left: var(--play-side-x); top: var(--play-side-y); transform: translateY(-50%); }
+  .play-B{ right:var(--play-side-x); top: var(--play-side-y); transform: translateY(-50%); }
+  .play-C{ left: 50%; top: var(--play-top-y); transform: translate(-50%, 0); }
+}
+
+/* さらに小さい端末向けの予備プリセット（任意） */
+@media (max-width: 380px){
+  :root{
+    --opp-side-x: -110px;
+    --opp-side-y: 58%;
+    --play-side-x: 18px;
+    --play-side-y: 66%;
+    --play-top-y: 96px;
+  }
+}
 
 
 
