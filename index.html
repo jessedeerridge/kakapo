@@ -337,20 +337,32 @@
 
 
 
-/* ===== スマホ時：セルテーブル＆ピース 固定サイズ ===== */
-@media (max-width: 600px){
-  :root{
-    --center-cell: 22px;  /* ← 固定サイズ（1マスの一辺）ここだけ変えればOK */
-  }
 
-  /* 任意：小さい時に枠線が細すぎないよう微調整 */
-  .piece .sq{
-    border-width: max(1px, calc(var(--center-cell) * 0.04));
-    border-radius: calc(var(--center-cell) * 0.08);
+@media (max-width: 600px){
+  /* ディシジョンカードの見出しを2行に */
+  #victoryArea .title{
+    position: relative;
+    color: transparent;        /* 元の「ディシジョンカード」を視覚的に隠す */
+  }
+  #victoryArea .title::before{
+    content: "ディシジョン\Aカード";  /* \A で改行 */
+    white-space: pre;                    /* 改行を効かせる */
+    color: #111;                         /* 実際に見えるテキスト色 */
+    line-height: 1.1;
+    display: inline-block;
   }
 }
 
-
+/* ===== 捨て札カードだけ小さく（約一回り=90%）===== */
+/* スマホ時だけならこの@mediaを残す。全画面で効かせるなら@mediaごと外す。 */
+@media (max-width: 600px){
+  /* どれか当たるはずの候補セレクタ。合うものだけ残す */
+  .discard-list .card,
+  #discard .card,
+  .discards .card{
+    width: calc(var(--card-w) * 0.90); /* ←ここがサイズ（縮小率を調整: 0.90→0.85 など） */
+  }
+}
 
 
 
