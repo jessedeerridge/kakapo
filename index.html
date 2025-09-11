@@ -1218,17 +1218,62 @@ function drawEdge(x, y, side, colorName = 'purple'){
 
 function renderMissionOverlay(spec){
   if(!centerDrawSvg) return;
-  centerDrawSvg.replaceChildren();
-  const gFill = document.createElementNS('http://www.w3.org/2000/svg','g');
-  const gEdge = document.createElementNS('http://www.w3.org/2000/svg','g');
-  centerDrawSvg.appendChild(gFill);
-  centerDrawSvg.appendChild(gEdge);
 
-  // セル塗り
+  // まるごと描き直し
+  centerDrawSvg.replaceChildren();
+
+  // レイヤ順：defs → 塗り → 画像 → 辺線
+  const defs = document.createElementNS(SVG_NS,'defs');
+  const gFill = document.createElementNS(SVG_NS,'g');
+  const gImg  = document.createElementNS(SVG_NS,'g');
+  const gEdge = document.createElementNS(SVG_NS,'g');
+  centerDrawSvg.append(defs, gFill, gImg, gEdge);
+
+  // セル塗り（同時に filled 座標を収集）
+  const filled = [];
   (spec.fills || []).forEach(cell=>{
     const c = cellXY(cell);
-    if (c) gFill.appendChild(drawFill(c.x, c.y, '#fff'));
+    if (c){
+      gFill.appendChild(drawFill(c.x, c.y, '#fff'));
+      filled.push(c);
+    }
   });
+
+  // 画像のクリップ（図形＝filled の合成矩形で clipPath を作成）
+  if (spec.image && filled.length){
+    const minX = Math.min(...filled.map(p=>p.x));
+    const minY = Math.min(...filled.map(p=>p.y));
+    const maxX = Math.max(...filled.map(p=>p.x)) + 1;
+    const maxY = Math.max(...filled.map(p=>p.y)) + 1;
+
+    const clipId = 'clip-mission1';
+    const clip = document.createElementNS(SVG_NS,'clipPath');
+    clip.setAttribute('id', clipId);
+
+    // 5マス（F6,F7,G6,G7,H6）それぞれを clipPath に追加
+    filled.forEach(({x,y})=>{
+      const r = document.createElementNS(SVG_NS,'rect');
+      r.setAttribute('x', x);
+      r.setAttribute('y', y);
+      r.setAttribute('width', 1);
+      r.setAttribute('height', 1);
+      clip.appendChild(r);
+    });
+    defs.appendChild(clip);
+
+    // 画像は図形の外にはみ出した分を clip でカット
+    const img = document.createElementNS(SVG_NS,'image');
+    img.setAttribute('x', minX);
+    img.setAttribute('y', minY);
+    img.setAttribute('width',  maxX - minX);
+    img.setAttribute('height', maxY - minY);
+    img.setAttribute('preserveAspectRatio', 'xMidYMid slice'); // 図形をしっかり覆う（全面貼り）
+    img.setAttribute('clip-path', `url(#${clipId})`);
+    // href 互換
+    img.setAttribute('href', spec.image);
+    img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', spec.image);
+    gImg.appendChild(img);
+  }
 
   // 辺塗り
 renderEdgesGrouped(gEdge, spec.edges || []);
@@ -1299,6 +1344,9 @@ const MISSION_1 = {
     { cell:'G7', side:'right',  color:'purple' },
     { cell:'H6', side:'bottom', color:'purple' },
   ],
+  image: 'bird1.png'   // ← 追加：この画像を図形内に貼り付ける
+
+
 };
 const MISSION_2_FIG1 = {
   fills: ['D3','D4','D5','D6','D7','E6','E7'],
@@ -1307,6 +1355,7 @@ const MISSION_2_FIG1 = {
     { cell:'D5', side:'right',  color:'red' },
     { cell:'E6', side:'top',    color:'red' },
   ],
+image: 'bird2.png' 
 };
 
 // ▼ ミッション #2 図2
@@ -1320,6 +1369,7 @@ const MISSION_2_FIG2 = {
     { cell:'J9',  side:'bottom', color:'blue' },
     { cell:'K8',  side:'bottom', color:'blue' },
   ],
+image: 'bird3.png' 
 };
 
 // ▼ ミッション #3 図1
@@ -1333,6 +1383,7 @@ const MISSION_3_FIG1 = {
     { cell:'G7', side:'right',  color:'yellow' },
     { cell:'G7', side:'top',    color:'yellow' },
   ],
+image: 'bird4.png' 
 };
 
 // ▼ ミッション #3 図2
@@ -1344,6 +1395,7 @@ const MISSION_3_FIG2 = {
     { cell:'K5', side:'top',   color:'green' },
     { cell:'K5', side:'right', color:'green' },
   ],
+image: 'bird5.png' 
 };
 
 
