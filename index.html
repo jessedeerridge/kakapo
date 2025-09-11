@@ -461,10 +461,12 @@
 
 /* === スマホ：ディシジョンカードポップを細くする === */
 @media (max-width: 600px){
-  /* ポップ本体をカード幅 + 左右余白に固定 */
+  /* ポップ本体をカード幅 + 左右余白に固定（content-boxに変更） */
   #victoryArea{
-    width: calc(var(--card-w) + 16px); /* 8px+8px の余白ぶんを加算 */
-    padding: 6px 8px;                  /* 既存より少しタイトに */
+    box-sizing: content-box;                    /* ← 追加：widthを内容幅基準にする */
+    inline-size: calc(var(--card-w) + 16px);    /* ← widthでも可。カード幅 + 8px×2 */
+    padding: 6px 8px;
+    overflow: hidden;                           /* ← 保険：小数誤差の1pxはみ出し防止 */
   }
 
   /* モバイルでは拡大を解除（溢れ防止） */
@@ -475,10 +477,10 @@
   /* 見出しが幅を押し広げないように */
   #victoryArea .title{ font-size: 11px; }
   #victoryArea .title::before{
-    /* 既存の \A 改行を維持しつつ、はみ出さないよう任意位置で折り可能に */
     overflow-wrap: anywhere;
   }
 }
+
 /* === スマホ：ディシジョンカードポップの高さを空白消しで算出 === */
 @media (max-width: 600px){
   /* コンテナ自体の余白とギャップを最小化（高さ=タイトル+カード+最小padding） */
@@ -542,18 +544,44 @@
   .opp.B{ right: calc(var(--opp-side-x) + var(--opp-right-nudge)); }
 }
 
+/* スマホ：ダブルスキャンポップをディシジョンカードの“右に隣接” */
+@media (max-width: 600px){
+  #doubleScanArea{
+    position: fixed;                 /* 既存と同じ（victoryAreaと揃える） */
+    box-sizing: content-box;
+    inline-size: calc(var(--card-w) + 43px); /* カード幅 + 左右8px */
+    padding: 6px 8px;
+    top: 60px;                        /* victoryAreaと同じY */
+    /* 12px(勝利ポップの左余白) + 勝利ポップ幅 + 8px(間隔) = 右に隣接 */
+    left: calc(25px + (var(--card-w) + 16px) + 8px);
+    overflow: hidden;                 /* 念のためのはみ出し防止 */
+  }
+}
 
 
+/* === スマホ：ダブルスキャンのカード幅をディシジョンカードと同じに === */
+@media (max-width: 600px){
+  /* ダブルスキャン内のカード（プレースホルダ/実カード）が常に --card-w に */
+  #doubleScanArea .cardbox,
+  #doubleScanArea .blank-card{
+    width: var(--card-w);
+    aspect-ratio: 63.5 / 88.9;  /* 念のため明示 */
+    transform: none;            /* 念のため拡大禁止 */
+  }
 
+  /* 画像を使う場合の保険（はみ出し/拡大防止） */
+  #doubleScanArea img{
+    max-width: 100%;
+    height: auto;
+  }
+}
 
-
-
-
-
-
-
-
-
+/* === スマホ：ダブルスキャン“ポップ内のカード”を少し上に寄せる === */
+@media (max-width: 600px){
+  /* まず、ラベル＋丸行（.doubleScan）とカードの間のスキマを詰める */
+  #doubleScanArea .doubleScan{
+    margin-bottom: 2px;   /* 既存 6px → 2px（0〜4pxで好み調整） */
+  }
 
 
 
