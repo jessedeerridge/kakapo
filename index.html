@@ -260,23 +260,95 @@
 .piece .handle:active{ transform:translateY(1px); }
 
 .trash-row .label{ display:none; }
-/* === Mobile: カード数字＆カード内セルも縮小（600px以下） === */
+
+
+
+
+
+
+
+
+
+
+/* ====== 共通：カード幅に応じて比率スケール（追記） ====== */
+:root{
+  /* ベース設計値（今のPCサイズに合わせて必要なら調整） */
+  --card-w-base: 56px;      /* 既定のカード幅 */
+  --num-size-base: 14px;    /* 角の数字の既定フォントサイズ */
+  --cell-size-base: 8px;    /* カード内セルの既定サイズ（px） */
+  --face-padding-base: 10px;/* カード内余白の既定（px） */
+  --card-radius-base: 6px;  /* カード角丸の既定（px） */
+
+  /* 比率（--card-w に連動。--card-w 未定義でもベースで動作） */
+  --card-scale: calc(var(--card-w, var(--card-w-base)) / var(--card-w-base));
+
+  /* 派生トークン：以下は全部 --card-w に追従 */
+  --num-size: clamp(8px, calc(var(--num-size-base) * var(--card-scale)), var(--num-size-base));
+  --cell-size: max(3.5px, calc(var(--cell-size-base) * var(--card-scale)));
+  --face-padding: max(2px, calc(var(--face-padding-base) * var(--card-scale)));
+  --card-radius: calc(var(--card-radius-base) * var(--card-scale));
+
+  /* 相手カード幅も比率で（元の 64px * .36 ≒ 23.04px / 56px ≒ 0.41） */
+  --opp-w-ratio: 0.41;
+  --card-w-opp: calc(var(--card-w, var(--card-w-base)) * var(--opp-w-ratio));
+}
+
+/* 最小限の上書き（既存CSSがこれらの変数を参照していれば不要です） */
+.face{ padding: var(--face-padding); border-radius: var(--card-radius); }
+.face .num{ font-size: var(--num-size); line-height: 1; }
+
+/* （保険）もし .cell のサイズが変数参照になっていない場合だけ有効化してください
+.face .cell, .grid .cell{ width: var(--cell-size); height: var(--cell-size); }
+*/
+
+/* ====== モバイル：幅だけ指定すれば他は自動で縮小 ====== */
 @media (max-width: 600px){
   :root{
-    /* ご指定のカード幅を採用 */
-    --card-w: 30px;                  /* 自分の手札（.cardbox） */
-    --card-w-opp: calc(64px * .36);  /* 相手裏面（.fan .card.opp） */
-
-    /* カード内グリッドのセルサイズも縮小 */
-    --cell-size: 4px;                /* .grid/.cell が参照 */
+    --card-w: 40px;  /* ←ご指定の値。これだけで数字/セル/余白/角丸も自動で小さくなる */
+    /* --card-w-opp は上の比率式により自動更新されます */
   }
-
-  /* 小さくしたカードで中身が窮屈にならないように内側余白も少し縮小 */
-  .face{ padding: 4px; }   /* 既定は 10px を上書き */
-
-  /* 角の数字をカード幅に比例させて縮小（最小8px, 上限12px） */
-  .face .num{ font-size: clamp(8px, calc(var(--card-w) * 0.28), 12px); }
 }
+
+
+
+
+
+
+
+
+/* handbar のモバイル2段レイアウト */
+@media (max-width: 600px){
+  .handbar{
+    flex-direction: column;   /* ←縦積み */
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .handbar .handrow{
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+  }
+  /* 下段があるときは高さを少し増やす（カード高さ=幅/0.714） */
+  .handbar.two-lines{
+    min-height: calc(var(--hand-h) + (var(--card-w) / 0.714) + 12px);
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -860,25 +932,62 @@ function renderTrash(){
 
   function myHand(){ if (!state.mySeat) return []; return state.hands?.[String(state.mySeat)] || []; }
 
-  function renderHands(){
-    handBar.innerHTML = '';
-    const g = state.game || {}; const my = myHand(); const isMyTurn = (g.turnUid === state.uid);
-    const leadColor = g.startColor || null;
-    const haveLead = !!my.find(id=>parseCardId(id).color === leadColor);
+ function renderHands(){
+  handBar.innerHTML = '';
+  handBar.classList.remove('two-lines');
 
-    my.forEach(id=>{
-      const card = makeCardFaceEl(id);
-      if (isMyTurn){
-        const {color} = parseCardId(id);
-        const playable = (!leadColor) || (haveLead ? color===leadColor : true);
-        if (playable){ card.classList.add('clickable','pulsate'); card.onclick = ()=> playMyCard(id); }
-        else{ card.classList.add('unplayable'); }
+  const g = state.game || {};
+  const my = myHand();
+  const isMyTurn = (g.turnUid === state.uid);
+  const leadColor = g.startColor || null;
+  const haveLead = !!my.find(id => parseCardId(id).color === leadColor);
+  const isMobile = window.matchMedia('(max-width: 600px)').matches;
+
+  // カード要素生成（既存の出せる/出せない判定を踏襲）
+  const make = (id) => {
+    const card = makeCardFaceEl(id);
+    if (isMyTurn){
+      const { color } = parseCardId(id);
+      const playable = (!leadColor) || (haveLead ? color === leadColor : true);
+      if (playable){
+        card.classList.add('clickable','pulsate');
+        card.onclick = ()=> playMyCard(id);
       }else{
         card.classList.add('unplayable');
       }
-      handBar.appendChild(card);
-    });
+    }else{
+      card.classList.add('unplayable');
+    }
+    return card;
+  };
+
+  if (isMobile){
+    // 8枚以上なら上下に割り振り、7枚以下は1段
+    const n = my.length;
+    const topN    = (n >= 8) ? Math.ceil(n/2) : n;   // 10→5, 9→5, 8→4, 7→7, …
+    const bottomN = (n >= 8) ? Math.floor(n/2) : 0;  // 10→5, 9→4, 8→4, 7→0, …
+
+    const rowTop = document.createElement('div');    rowTop.className = 'handrow top';
+    const rowBot = document.createElement('div');    rowBot.className = 'handrow bottom';
+
+    for (let i=0; i<topN; i++) rowTop.appendChild(make(my[i]));
+    if (bottomN > 0){
+      for (let i=topN; i<topN+bottomN; i++) rowBot.appendChild(make(my[i]));
+      handBar.classList.add('two-lines');
+    }
+
+    handBar.appendChild(rowTop);
+    if (bottomN > 0) handBar.appendChild(rowBot);
+
+  }else{
+    // PCは従来どおり1段
+    my.forEach(id => handBar.appendChild(make(id)));
   }
+}
+
+// 画面サイズ変化にも追従
+window.addEventListener('resize', renderHands);
+
 
   function renderOpponents(){
     const maps = computeABCPositions();
