@@ -351,32 +351,66 @@
 
 
 @media (max-width: 600px){
-  /* ディシジョンカードの見出しを2行に */
+  /* 見出しを2行＆中央寄せ */
+  #victoryArea { 
+    text-align: center;        /* 子のインライン要素を中央に */
+  }
   #victoryArea .title{
     position: relative;
-    color: transparent;        /* 元の「ディシジョンカード」を視覚的に隠す */
+    color: transparent;        /* 元のテキストを視覚的に隠す */
   }
   #victoryArea .title::before{
     content: "ディシジョン\Aカード";  /* \A で改行 */
-    white-space: pre;                    /* 改行を効かせる */
-    color: #111;                         /* 実際に見えるテキスト色 */
+    white-space: pre; 
+    color: #111;
     line-height: 1.1;
-    display: inline-block;
+    display: block;            /* ブロックにして */
+    margin: 0 auto;            /* 自身も中央に */
+  }
+
+  /* カード（画像含む）を中央寄せ */
+  #victoryArea .card,
+  #victoryArea .card > img,
+  #victoryArea img.card,
+  #victoryArea .decisionCard {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* カード一覧がコンテナで横並びなら中央寄せ */
+  #victoryArea .cards,
+  #victoryArea .card-list,
+  #victoryArea .deck {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;           /* 収まらないときは折り返す */
+    gap: 8px;
   }
 }
 
-/* ===== 捨て札カードだけ小さく（約一回り=90%）===== */
-/* スマホ時だけならこの@mediaを残す。全画面で効かせるなら@mediaごと外す。 */
-@media (max-width: 600px){
-  /* どれか当たるはずの候補セレクタ。合うものだけ残す */
-  .discard-list .card,
-  #discard .card,
-  .discards .card{
-    width: calc(var(--card-w) * 0.90); /* ←ここがサイズ（縮小率を調整: 0.90→0.85 など） */
-  }
+
+/* 捨て札一覧のカードを全体の85%に（影響範囲は .trash-panel 内のみ） */
+.trash-panel{
+  --trash-scale: 0.85; /* ← 好みで 0.80〜0.90 に調整可 */
 }
-
-
+.trash-panel .cardbox{
+  /* 幅だけ小さく → 高さは aspect-ratio で追従 */
+  width: calc(var(--card-w, var(--card-w-base)) * var(--trash-scale));
+}
+/* 数字・内側セル・余白なども同率で縮小（にじみ防止） */
+.trash-panel .face{
+  padding: calc(var(--face-padding) * var(--trash-scale));
+  border-radius: calc(var(--card-radius) * var(--trash-scale));
+}
+.trash-panel .face .num{
+  font-size: calc(var(--num-size) * var(--trash-scale));
+}
+.trash-panel .cell{
+  width:  calc(var(--cell-size) * var(--trash-scale));
+  height: calc(var(--cell-size) * var(--trash-scale));
+}
 
 
 
