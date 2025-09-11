@@ -337,6 +337,22 @@
 
 
 
+/* ===== スマホ時：セルテーブル＆ピースのサイズ調整 ===== */
+@media (max-width: 600px){
+  :root{
+    /* 方法A：画面幅に合わせて自動スケール（左右16px余白を確保） */
+    --center-cell: clamp(16px, calc((min(100vw, 100svw) - 32px) / 12), 28px);
+    /* ↑固定値にしたい場合は↓の行だけ残して好みのpxへ
+       --center-cell: 22px; */
+  }
+
+  /* 小さくした時の見やすさ微調整（任意） */
+  .piece .sq{
+    /* セル縁の白線が細くなり過ぎないように */
+    border-width: max(1px, calc(var(--center-cell) * 0.04));
+    border-radius: calc(var(--center-cell) * 0.08);
+  }
+}
 
 
 
