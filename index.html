@@ -459,9 +459,46 @@
   }
 }
 
+/* === スマホ：ディシジョンカードポップを細くする === */
+@media (max-width: 600px){
+  /* ポップ本体をカード幅 + 左右余白に固定 */
+  #victoryArea{
+    width: calc(var(--card-w) + 16px); /* 8px+8px の余白ぶんを加算 */
+    padding: 6px 8px;                  /* 既存より少しタイトに */
+  }
 
+  /* モバイルでは拡大を解除（溢れ防止） */
+  #victoryArea .cardbox{
+    transform: none;
+  }
 
+  /* 見出しが幅を押し広げないように */
+  #victoryArea .title{ font-size: 11px; }
+  #victoryArea .title::before{
+    /* 既存の \A 改行を維持しつつ、はみ出さないよう任意位置で折り可能に */
+    overflow-wrap: anywhere;
+  }
+}
 
+/* --- スマホ時：他プレイヤー手札だけ下げる & 上プレイヤー全体を少し下へ --- */
+@media (max-width: 600px){
+  :root{
+    /* 上プレイヤーの全体オフセット（ネームも含めて下げる） */
+    --opp-top-y: 20px;        /* 既存の 8px を上書き：少し下へ */
+
+    /* 他プレイヤーの “手札（扇）だけ” のオフセット量 */
+    --fan-shift-side: 30px;   /* A/B の扇を下げる量（お好みで 10〜18px 目安） */
+    --fan-shift-top: 25px;     /* C の扇を微調整したい場合。不要なら 0px でもOK */
+  }
+
+  /* 手札（扇）だけ下げる：ネーム（.badge）や枠（.opp）は動かさない */
+  .opp.A .fan,
+  .opp.B .fan{ top: calc(50% + var(--fan-shift-side)); }
+
+  /* 上プレイヤーは “全体” を下げる（ネームも一緒に）＋必要なら扇も微調整 */
+  .opp.C{ top: var(--opp-top-y); }            /* 全体を下げる */
+  .opp.C .fan{ top: calc(50% + var(--fan-shift-top)); }  /* 扇だけ微調整（任意） */
+}
 
 
 </style>
