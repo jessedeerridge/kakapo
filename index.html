@@ -260,13 +260,24 @@
 .piece .handle:active{ transform:translateY(1px); }
 
 .trash-row .label{ display:none; }
-
+/* === Mobile: カード数字＆カード内セルも縮小（600px以下） === */
 @media (max-width: 600px){
   :root{
-    --card-w: 30px;            /* 自分の手札（.cardbox） */
-    --card-w-opp: calc(64px * .36); /* 相手裏面（.fan .card.opp） */
+    /* ご指定のカード幅を採用 */
+    --card-w: 30px;                  /* 自分の手札（.cardbox） */
+    --card-w-opp: calc(64px * .36);  /* 相手裏面（.fan .card.opp） */
+
+    /* カード内グリッドのセルサイズも縮小 */
+    --cell-size: 4px;                /* .grid/.cell が参照 */
   }
+
+  /* 小さくしたカードで中身が窮屈にならないように内側余白も少し縮小 */
+  .face{ padding: 4px; }   /* 既定は 10px を上書き */
+
+  /* 角の数字をカード幅に比例させて縮小（最小8px, 上限12px） */
+  .face .num{ font-size: clamp(8px, calc(var(--card-w) * 0.28), 12px); }
 }
+
 
 
 </style>
