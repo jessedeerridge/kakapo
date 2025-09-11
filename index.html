@@ -41,7 +41,7 @@
   .join-box{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .join-box input{padding:10px;border:1px solid #ddd;border-radius:8px;font-size:16px}
   .btn{padding:10px 14px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
-  .btn.ghost{background:#f7f7f7;color:#111}
+  .btn.ghost{background:#189e6b;}
   .btn.sm{padding:6px 10px;border-radius:8px}
   .hidden{display:none !important}
   .muted{opacity:.7; font-size:13px}
@@ -567,14 +567,14 @@
     width: var(--card-w);
     aspect-ratio: 63.5 / 88.9;  /* 念のため明示 */
     transform: none;            /* 念のため拡大禁止 */
-  }
+  } }
 
 /* === スマホ：ダブルスキャン“ポップ内のカード”を少し上に寄せる === */
 @media (max-width: 600px){
   /* まず、ラベル＋丸行（.doubleScan）とカードの間のスキマを詰める */
   #doubleScanArea .doubleScan{
     margin-bottom: 2px;   /* 既存 6px → 2px（0〜4pxで好み調整） */
-  }
+  } }
 
 /* スマホ：上プレイヤーのネーム＆手札を下げる（後勝ちの追記） */
 @media (max-width: 600px){
@@ -593,6 +593,48 @@
 
 
 
+
+/* === 着席ポップ === */
+.seat-pop{
+  position: fixed;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  background: #189e6b;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(0,0,0,.12);
+  padding: 10px;
+  z-index: 220;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 280px;
+}
+.seat-pop .row{ display:flex; gap:8px; align-items:center; }
+.seat-pop label{ width:84px; font-size:13px; }
+
+.tabs{ display:flex; gap:6px; flex-wrap:wrap; }
+.tab{
+  padding:6px 10px;
+  border:1px solid #ddd;
+  border-radius:999px;
+  cursor:pointer;
+  user-select:none;
+  position: relative;
+  background:#189e6b;
+}
+.tab.active{ background:#189e6b; color:#fff; border-color:#111; }
+.tab.disabled{ opacity:.35; pointer-events:none; }
+
+.tab.taken::after{
+  content: '✕';
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  font-size: 18px; font-weight: 700; color:#b91c1c; /* ←赤で見える色に */
+  z-index: 1;  /* 念のため最前面に */
+  pointer-events: none;
+}
 
 
 
@@ -689,18 +731,17 @@
 <!-- 左下：捨て札 -->
 <button id="btnOpenTrash" class="trashBtn" title="トラッシュ" aria-label="捨て札">🗑️</button>
 
-<!-- 座席シート -->
-<div id="seatSheet" class="hidden" style="position:fixed;inset:0;z-index:80;display:flex;flex-direction:column;justify-content:flex-end;">
-  <div id="sheetBackdrop" style="position:absolute;inset:0;background:rgba(0,0,0,.24);"></div>
-  <div class="panel" role="dialog" aria-modal="true" style="position:relative;background:rgba(255,255,255,.98);border-top-left-radius:16px;border-top-right-radius:16px;border-top:1px solid #eee;box-shadow:0 -10px 30px rgba(0,0,0,.12);padding:10px 12px;width:min(420px, calc(100vw - 32px));margin:0 auto;">
-    <div class="row head" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-      <div class="title" id="sheetTitle" style="font-weight:700">座席選択</div>
-      <button id="sheetClose" class="btn ghost" style="padding:6px 10px;">閉じる</button>
-    </div>
-    <div class="row" id="rowTop" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center;margin:8px 0;"></div>
-    <div class="row" id="rowSeats" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center;margin:8px 0;"></div>
+<!-- 着席ポップ -->
+<div id="seatPop" class="seat-pop hidden" role="dialog" aria-modal="true" aria-label="座席選択">
+  <div class="row">
+    <label>席を選択</label>
+    <div id="seatTabs" class="tabs"></div>
+  </div>
+  <div class="row" style="justify-content:flex-end">
+    <button class="btn sm ghost" id="btnSeatCancel">観戦</button>
   </div>
 </div>
+
 
 <!-- 捨て札シート -->
 <div id="trashSheet" class="hidden" style="position:fixed;inset:0;z-index:85;display:flex;align-items:center;justify-content:center;">
@@ -710,7 +751,6 @@
 
     <div class="row head" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
       <div class="title" style="font-weight:700">捨て札一覧</div>
-      <button id="trashClose" class="btn ghost" style="padding:6px 10px;">閉じる</button>
     </div>
     <div id="trashBody" class="trash-grid"></div>
   </div>
@@ -762,19 +802,14 @@
   const centerGrid  = document.getElementById('centerGrid');   // 背景の12x12罫線
   const centerPiece = document.getElementById('centerPiece');  // 勝者ピースの12x12（同期ドラッグ）
 
-  // ボトムシート
-  const seatSheet   = document.getElementById('seatSheet');
-  const rowTop      = document.getElementById('rowTop');
-  const rowSeats    = document.getElementById('rowSeats');
-  const sheetTitle  = document.getElementById('sheetTitle');
-  const sheetClose  = document.getElementById('sheetClose');
-  const sheetBackdrop = document.getElementById('sheetBackdrop');
-  const fabOpenSeat = document.getElementById('fabOpenSeat');
+const seatPop  = document.getElementById('seatPop');
+const seatTabs = document.getElementById('seatTabs');
+const btnSeatCancel = document.getElementById('btnSeatCancel');
+const fabOpenSeat = document.getElementById('fabOpenSeat'); // 既存
 // 捨て札UI
 const btnOpenTrash  = document.getElementById('btnOpenTrash');
 const trashSheet    = document.getElementById('trashSheet');
 const trashBackdrop = document.getElementById('trashBackdrop');
-const trashClose    = document.getElementById('trashClose');
 const trashBody     = document.getElementById('trashBody');
 // ★ ゴミ箱UIの開閉はグローバルで常時有効にしておく（入室前でも開く）
 btnOpenTrash?.addEventListener('click', () => {
@@ -782,7 +817,6 @@ btnOpenTrash?.addEventListener('click', () => {
   renderTrash();
 });
 trashBackdrop?.addEventListener('click', () => show(trashSheet, false));
-trashClose?.addEventListener('click', () => show(trashSheet, false));
   // ==== 40枚カードデータ（色×8、紫は0~8 ※0はピースなし表現） ====
   const CARD_DATA = {
     red:   {1:'A1',2:'A1,B1',3:'A1,B1,C1',4:'A1,B1,C1,C2',5:'A1,B1,C1,C2,D1',6:'A1,A2,B2,C2,C3,D2',7:'A1,A2,B1,C1,C2,D1,E1',8:'A1,A2,B2,C2,D2,E2,E3,F2'},
@@ -931,7 +965,7 @@ function updateHeader(){
 
     updateHeader(); show(joinPanel, false); show(afterPanel, true); state.joined = true;
 
-    wireRoom(); openSeatSheet();
+ wireRoom(); showSeatPop();
     document.getElementById('doubleScanArea').classList.remove('hidden');
   }
   btnJoin.onclick = join;
@@ -959,7 +993,7 @@ function updateHeader(){
       if (btn3){ btn3.onclick = async ()=>{ await setPlayersAndDeal(3); }; }
       if (btn4){ btn4.onclick = async ()=>{ await setPlayersAndDeal(4); }; }
       if (hostInfo){ hostInfo.textContent = `ホスト：${st.hostUid ? (st.hostUid===state.uid?'あなた':st.hostUid.slice(0,4)) : '未設定'}`; }
-      if (!seatSheet.classList.contains('hidden')) renderSeatSheet();
+ if (!seatPop.classList.contains('hidden')) renderSeatTabs();
       updateHeader(); renderAll();
     });
 
@@ -967,7 +1001,7 @@ function updateHeader(){
 
     onValue(ref(db, `${room}/seats`), snap=>{
       state.seats = snap.val() || {}; state.mySeat = null; for (const k of Object.keys(state.seats)){ if (state.seats[k]?.uid === state.uid){ state.mySeat = Number(k); break; } }
-      if (!seatSheet.classList.contains('hidden')) renderSeatSheet();
+ if (!seatPop.classList.contains('hidden')) renderSeatTabs();
       renderAll();
     });
 
@@ -1024,7 +1058,6 @@ onValue(ref(db, `${room}/used`), snap=>{
 // ゴミ箱UIの開閉
 btnOpenTrash?.addEventListener('click', ()=>{ show(trashSheet, true); renderTrash(); });
 trashBackdrop?.addEventListener('click', ()=> show(trashSheet, false));
-trashClose?.addEventListener('click', ()=> show(trashSheet, false));
 
 
     btnNextRound?.addEventListener('click', onNextRound);
@@ -1080,46 +1113,89 @@ trashClose?.addEventListener('click', ()=> show(trashSheet, false));
   }
 
   // === 座席UI ===
-  function openSeatSheet(){ show(seatSheet, true); renderSeatSheet(); }
-  function closeSeatSheet(){ show(seatSheet, false); }
-  sheetClose.addEventListener('click', closeSeatSheet);
-  sheetBackdrop.addEventListener('click', closeSeatSheet);
-  fabOpenSeat.addEventListener('click', openSeatSheet);
+function showSeatPop(){ show(seatPop, true); renderSeatTabs(); }
+function hideSeatPop(){ show(seatPop, false); }
 
-  function renderSeatSheet(){
-    const isHost = state.hostUid === state.uid; sheetTitle.textContent = isHost ? '設定と着席（ホスト）' : '着席（ゲスト）';
-    rowTop.innerHTML = '';
-    if (isHost){
-      const seg = document.createElement('div'); seg.style.display='flex'; seg.style.gap='8px';
-      const mk = (n)=>{ const b=document.createElement('button'); b.className='btn ghost'; b.textContent=`${n}人`; b.onclick= async()=>{ await setPlayersAndDeal(n); }; return b; };
-      seg.appendChild(mk(1)); seg.appendChild(mk(2)); seg.appendChild(mk(3)); seg.appendChild(mk(4));
-      const cap = document.createElement('div'); cap.className='muted'; cap.textContent='人数を選んだ時点で40枚をシャッフル配布します。次に座席を選んでください。';
-      rowTop.appendChild(seg); rowTop.appendChild(cap);
-    }else{
-      const cap = document.createElement('div'); cap.className='muted'; cap.textContent = state.playersN ? `現在 ${state.playersN} 人プレイ` : 'ホストが人数を設定中…'; rowTop.appendChild(cap);
+function renderSeatTabs(){
+  if (!seatTabs) return;
+  seatTabs.innerHTML = '';
+
+  const N = state.playersN || 4;
+  const isSeated = !!state.mySeat;   // ← 自席を保持しているか
+
+  for (let i=1;i<=4;i++){
+    const taken = !!state.seats?.[i];
+    const mine  = state.seats?.[i]?.uid === state.uid;
+    const invalidByPlayers =
+      (!N) || (N===3 && i===4) || (N===2 && i>2) || (N===1 && i>1);
+
+    const t = document.createElement('div');
+    const classes = ['tab'];
+    if (mine) {
+      classes.push('active');
     }
 
-    rowSeats.innerHTML = '';
-    const N = state.playersN || 4;
-    for (let i=1; i<=4; i++){
-      const taken = !!state.seats[i];
-      const mine  = state.seats[i]?.uid === state.uid;
-      const invalidByPlayers = (!N) || (N===3 && i===4) || (N===2 && i>2) || (N===1 && i>1);
-
-      const btn = document.createElement('button');
-      btn.className = 'btn ghost'; btn.style.minWidth='76px';
-      btn.textContent = mine ? `席${i}（あなた）` : taken ? `席${i}（使用中）` : `席${i}`;
-      btn.disabled = (!mine && (taken || invalidByPlayers));
-      btn.onclick = async ()=>{ if (mine){ await releaseMySeat(); } else { const ok = await claimSeat(i); if (ok){ await maybeFillStartFromSeat(); closeSeatSheet(); } } };
-      rowSeats.appendChild(btn);
+    // すでに他の誰かが着席 → ✕ 表示＋無効化
+    if (taken && !mine) {
+      classes.push('disabled','taken');
     }
+
+    // ★ 追加：自分がどこかに着席している間は、他席を選べない（退席または観戦が必要）
+    if (isSeated && !mine) {
+      classes.push('disabled','locked'); // lockedは表示用（必要ならCSS）
+    }
+
+    // 人数外は無効化（見た目だけ薄く）
+    if (invalidByPlayers) {
+      classes.push('disabled');
+    }
+
+    t.className = classes.join(' ');
+    t.textContent = String(i);
+
+    // クリック動作
+    t.onclick = async () => {
+      // 自席タブならクリックで「退席」
+      if (mine) {
+        await releaseMySeat();
+        renderSeatTabs();
+        return;
+      }
+      // 自席を持っている間は他席へ移動不可（観戦または退席が必要）
+      if (isSeated) {
+        // 任意：注意表示
+        // alert('別の席を選ぶ前に「退席」または「観戦」を押してください。');
+        return;
+      }
+      // 空席かつ有効なときだけ着席
+      if (!taken && !invalidByPlayers) {
+        const ok = await claimSeat(i);
+        if (ok){
+          await maybeFillStartFromSeat();
+          hideSeatPop();
+        }
+      }
+    };
+
+    seatTabs.appendChild(t);
   }
+}
+
+// ボタン操作
+btnSeatCancel?.addEventListener('click', async ()=>{
+  if (state.mySeat) {
+    await releaseMySeat();   // ← 観戦に戻る＝退席
+  }
+  hideSeatPop();
+});
+fabOpenSeat?.addEventListener('click', showSeatPop);
+
   async function claimSeat(n){
     const seatRef = ref(db, `rooms/${state.code}/seats/${n}`);
     try{
       const res = await runTransaction(seatRef, cur=>{ if (!cur || cur.uid === state.uid){ return { uid: state.uid, name: state.name, at: Date.now() }; } return cur; }, {applyLocally:false});
       if (!res.committed || res.snapshot.val()?.uid !== state.uid){ alert(`席${n} は使用中です。`); return false; }
-      onDisconnect(seatRef).remove();
+ state._seatRef = seatRef; // ← 現在の座席Refを保持（ページクローズ時にだけ使う）
       await syncTurnOwnershipOnSeatChange(n);
       return true;
     }catch(e){ console.error(e); alert('着席に失敗しました。'); return false; }
@@ -1140,6 +1216,27 @@ trashClose?.addEventListener('click', ()=> show(trashSheet, false));
     }
     if (Object.keys(updates).length){ await update(ref(db), updates); }
   }
+
+// --- ページクローズ時だけ「離席」させる ---
+function scheduleSeatLeaveOnClose(){
+  const refSeat = state?._seatRef;
+  if (!refSeat) return;
+  try {
+    // ページが閉じられ、RTDB が切断された瞬間に座席ノードが削除される
+    onDisconnect(refSeat).remove();
+  } catch (e) {
+    console.warn('onDisconnect scheduling failed', e);
+  }
+}
+
+// bfcache（戻る/進むのキャッシュ）での「pagehide」は除外する
+window.addEventListener('pagehide', (ev)=>{
+  if (!ev.persisted) scheduleSeatLeaveOnClose();
+}, { capture:true, once:true });
+
+// 一部ブラウザ向けフォールバック
+window.addEventListener('beforeunload', scheduleSeatLeaveOnClose, { capture:true, once:true });
+
 
   // === レンダリング ===
   function renderAll(){ renderDecisionCard(); renderHands(); renderOpponents(); renderPlays();
