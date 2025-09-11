@@ -479,6 +479,38 @@
     overflow-wrap: anywhere;
   }
 }
+/* === スマホ：ディシジョンカードポップの高さを空白消しで算出 === */
+@media (max-width: 600px){
+  /* コンテナ自体の余白とギャップを最小化（高さ=タイトル+カード+最小padding） */
+  #victoryArea{
+    display: inline-grid;      /* 内容にぴったりの高さにしやすい */
+    grid-auto-rows: auto;
+    align-items: start;
+    gap: 0;                    /* ← flexのgap(6px)を無効化して詰める */
+    padding-block: 4px;        /* 上下の内側余白を最小限に */
+  }
+
+  /* タイトル側の空白を極小化（2行想定だが行間は詰める） */
+  #victoryArea .title{
+    margin: 0;
+    line-height: 1;            /* 行間の余白を削減 */
+  }
+  #victoryArea .title::before{
+    display: block;
+    white-space: pre;          /* 「ディシジョン↵カード」のまま */
+    line-height: 1;            /* ここでも行間を詰める */
+    margin: 0;
+  }
+
+  /* カード側の“行のベースライン余白”を除去（画像/インライン要素の隙間対策） */
+  #decisionCardBox{
+    line-height: 0;            /* イメージ/インラインの下側に出る隙間を消す */
+  }
+  #decisionCardBox .cardbox{
+    display: block;            /* ブロック化して上下の余白を安定化 */
+    margin: 0 auto;
+  }
+}
 
 /* --- スマホ時：他プレイヤー手札だけ下げる & 上プレイヤー全体を少し下へ --- */
 @media (max-width: 600px){
@@ -499,6 +531,35 @@
   .opp.C{ top: var(--opp-top-y); }            /* 全体を下げる */
   .opp.C .fan{ top: calc(50% + var(--fan-shift-top)); }  /* 扇だけ微調整（任意） */
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 </style>
