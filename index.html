@@ -261,6 +261,13 @@
 
 .trash-row .label{ display:none; }
 
+@media (max-width: 600px){
+  :root{
+    --card-w: 30px;            /* 自分の手札（.cardbox） */
+    --card-w-opp: calc(64px * .36); /* 相手裏面（.fan .card.opp） */
+  }
+}
+
 
 </style>
 </head>
