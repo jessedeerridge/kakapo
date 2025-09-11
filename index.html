@@ -727,6 +727,26 @@
 
 
 
+@media (max-width: 600px){
+  :root{
+    --opp-right-nudge: 18px;   /* 既存のまま */
+  }
+  /* これで right が負にならず、画面の右外へはみ出さない */
+  .opp.B{ right: max(0px, calc(var(--opp-side-x) + var(--opp-right-nudge))); }
+}
+@media (max-width: 600px){
+  html, body, .table-area{ overflow-x: hidden; }
+}
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -819,9 +839,9 @@
 </div>
 
 <!-- 右下：設定 -->
-<button id="fabOpenSeat" class="fab" title="設定 / 座席選択" aria-label="設定">⚙️</button>
+<button id="fabOpenSeat" class="fab hidden" title="設定 / 座席選択" aria-label="設定">⚙️</button>
 <!-- 左下：捨て札 -->
-<button id="btnOpenTrash" class="trashBtn" title="トラッシュ" aria-label="捨て札">🗑️</button>
+<button id="btnOpenTrash" class="trashBtn hidden" title="トラッシュ" aria-label="捨て札">🗑️</button>
 <div id="seatBackdrop" class="hidden" style="position:fixed;inset:0;z-index:210;background:rgba(0,0,0,.24);"></div>
 
 <!-- 着席ポップ -->
@@ -1487,7 +1507,8 @@ image: 'bird5.png'
     await runTransaction(ref(db, `rooms/${code}/settings/hostUid`), cur => cur || state.uid, { applyLocally:false });
 
     updateHeader(); show(joinPanel, false); show(afterPanel, true); state.joined = true;
-
+show(btnOpenTrash, true);
+show(fabOpenSeat, true);
  wireRoom(); showSeatPop();
     document.getElementById('doubleScanArea').classList.remove('hidden');
   }
