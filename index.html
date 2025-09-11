@@ -738,22 +738,75 @@ html, body{
 }
 
 
-
-
-
 .mission-number-pop{
-  position:fixed;
-  top:60px;          /* ヘッダー直下。必要に応じて調整 */
-  right:12px;        /* 画面右端から少し内側 */
-  background:rgba(17,17,17,.9);
-  color:#fff;
-  font-size:20px;
-  font-weight:800;
-  padding:8px 16px;
-  border-radius:12px;
-  box-shadow:0 6px 18px rgba(0,0,0,.25);
-  z-index:120;       /* header(初期)より前面に */
+  position: fixed;
+  top: 60px;           /* ヘッダー下の位置。必要に応じ調整 */
+  right: 12px;
+  background: rgba(17,17,17,.9);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 800;
+  padding: 8px 16px;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.25);
+  z-index: 120;        /* ヘッダーより前面 */
 }
+
+
+
+/* 入室画面だけ背景を薄くして全画面に広げる */
+body:has(#joinPanel:not(.hidden)) main {
+  min-height: calc(100vh - 60px);       /* ヘッダーぶんを除く全高 */
+  width: 100%;
+  max-width: none;                      /* 中央寄せ解除 */
+  margin: 0;
+  background:
+    linear-gradient(rgba(255,255,255,0.4), rgba(255,255,255,0.6)),
+    url("kakapoback.jpg") center/cover no-repeat;
+  display: block;                       /* grid→blockにして中央寄せ解除 */
+  padding: 14px;                         /* 元の余白は必要に応じて */
+}
+
+/* 入室画面では入力欄を左寄せ */
+body:has(#joinPanel:not(.hidden)) .join-box {
+  justify-content: flex-start;
+}
+
+/* 入室後は通常レイアウトのまま（max-width付きgrid） */
+body:has(#afterPanel:not(.hidden)) main {
+  padding:14px;
+  display:grid;
+  gap:16px;
+  max-width:1100px;
+  margin:0 auto;
+  padding-bottom: calc(var(--hand-h) + 24px);
+  background:none;   /* 入室後は背景なし／必要なら別背景 */
+}
+
+
+
+
+/* 入室後：main全体にgreen.jpgを薄く表示 */
+body:has(#afterPanel:not(.hidden)) main {
+  /* 1枚目に白の透過レイヤーを敷き、2枚目に画像を重ねる */
+  background:
+    linear-gradient(rgba(255,255,255,0.7), rgba(255,255,255,0.7)),
+    url("green.jpg") center/cover no-repeat;
+  min-height: 100vh;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+
+
+
+
+
+
+
+
+
 
 
 
