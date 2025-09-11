@@ -310,6 +310,18 @@
 }
 
 
+/* ===== スマホ時：セルテーブル＆ピース 固定サイズ ===== */
+@media (max-width: 600px){
+  :root{
+    --center-cell: 22px;  /* ← 固定サイズ（1マスの一辺）ここだけ変えればOK */
+  }
+
+  /* 任意：小さい時に枠線が細すぎないよう微調整 */
+  .piece .sq{
+    border-width: max(1px, calc(var(--center-cell) * 0.04));
+    border-radius: calc(var(--center-cell) * 0.08);
+  }
+}
 
 
 
