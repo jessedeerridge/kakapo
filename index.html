@@ -1642,7 +1642,17 @@ onValue(ref(db, `${room}/plays`), snap=>{
     onValue(ref(db, `${room}/game`), snap=>{
       state.game = snap.val() || {};
       updateHeader(); renderAll();
+{
+  const g = state.game || {};
+  const r = g.round || 1;
+  const vict = g.victory;
+  const mySeat = state.mySeat || null;
 
+  const winnerSeat = vict ? (vict.seat || getSeatOfUid(vict.uid)) : null;
+  const canNext = !!(vict && Number(vict.round) === r && mySeat && winnerSeat && mySeat === winnerSeat);
+
+  show(nextPanel, canNext);
+}
       // ★ ここから追加：ダブルスキャンのトークン描画更新
       const used = state.game.doubleScanUsed || 0;
       const circles = document.querySelectorAll('#doubleScanArea .circles span');
@@ -2131,20 +2141,28 @@ function renderPlays(){
     }
     parent.appendChild(el);
 
-    // 勝者を強調（クリックで「次ラウンド」表示＆中央ピース生成）
-    if (g.victory && Number(g.victory.round) === r && g.victory.uid === p.uid){
-      const wrap = document.createElement('div');
-      wrap.className = 'played winner';
-      parent.replaceChild(wrap, el);
-      wrap.appendChild(el);
+// 勝者を強調（クリックで「次ラウンド」表示＆中央ピース生成）
+if (g.victory && Number(g.victory.round) === r) {
+  const winnerSeat   = g.victory.seat || getSeatOfUid(g.victory.uid);
+  const isWinnerSeat = (seatNum === winnerSeat);
 
-      if (isMe){
-        wrap.onclick = ()=>{
-          show(nextPanel, true);
-          spawnVictoryPieceOnce();   // 勝者のみクリック可
-        };
-      }
+  if (isWinnerSeat){
+    const wrap = document.createElement('div');
+    wrap.className = 'played winner';
+    parent.replaceChild(wrap, el);
+    wrap.appendChild(el);
+
+    // 「今この端末が座っている席」が勝者席ならクリック可能
+    if (state.mySeat === winnerSeat){
+      wrap.classList.add('clickable');
+      wrap.onclick = ()=>{
+        show(nextPanel, true);
+        spawnVictoryPieceOnce(); // 勝者席のみクリック可
+      };
     }
+  }
+}
+
   }
 }
 
