@@ -741,6 +741,19 @@ html, body{
 
 
 
+.mission-number-pop{
+  position:fixed;
+  top:60px;          /* ヘッダー直下。必要に応じて調整 */
+  right:12px;        /* 画面右端から少し内側 */
+  background:rgba(17,17,17,.9);
+  color:#fff;
+  font-size:20px;
+  font-weight:800;
+  padding:8px 16px;
+  border-radius:12px;
+  box-shadow:0 6px 18px rgba(0,0,0,.25);
+  z-index:120;       /* header(初期)より前面に */
+}
 
 
 
@@ -754,6 +767,9 @@ html, body{
   <h1>ザ・カカポ</h1>
   <div class="small" id="headerInfo"></div>
 </header>
+
+<div id="missionNumberPop" class="mission-number-pop hidden">#1</div>
+
 
 <main>
   <!-- 入室 -->
@@ -1321,7 +1337,7 @@ function updateMissionOverlay(){
   } else {
     clearMissionOverlay();
     centerDraw?.classList.add('hidden'); // 視覚的にも非表示
-  }
+  } updateMissionNumberPop(); 
 }
 
 // 図リストをそれぞれ独立した <g> に描画（置かれたセルは“指定の通り”に表示）
@@ -1387,6 +1403,19 @@ function renderMissionOverlays(specList){
 renderEdgesGrouped(gEdge, spec.edges || []);
 
   });
+}
+
+
+// ★ ミッション番号ポップ
+const missionNumberPop = document.getElementById('missionNumberPop');
+
+function updateMissionNumberPop(){
+  if (typeof state.stage === 'number' && state.stage > 0){
+    missionNumberPop.textContent = `#${state.stage}`;
+    missionNumberPop.classList.remove('hidden');
+  } else {
+    missionNumberPop.classList.add('hidden');
+  }
 }
 
 
