@@ -637,7 +637,93 @@
 }
 
 
+/* 捨て札パネル内：グリッドの列/行サイズも trash-scale に揃える（ピースの隙間解消） */
+.trash-panel .grid{
+  grid-template-columns: repeat(var(--cols), calc(var(--cell-size) * var(--trash-scale)));
+  grid-template-rows:    repeat(var(--rows), calc(var(--cell-size) * var(--trash-scale)));
+}
 
+/* 手札は薄くしない（非アクティブでも不透明のまま） */
+.handbar .cardbox.unplayable{
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+
+/* === ステージ選択ポップ === */
+.stage-pop{
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #189e6b;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(0,0,0,.18);
+  padding: 10px;
+  z-index: 230;        /* seat-pop(220) より前 */
+  min-width: 300px;
+}
+.stage-pop .title{ font-weight:700; }
+.stage-grid{
+  display: grid;
+  grid-template-columns: repeat(4, minmax(50px, 1fr)); /* 4列×5行=20個 */
+  gap: 8px;
+  margin-top: 6px;
+}
+.stage-btn{
+  padding: 8px 0;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  font-weight: 700;
+}
+.stage-btn.active{
+  background: #111;
+  color: #fff;
+  border-color: #111;
+}
+
+/* ステージ用の上位オーバーレイ（seatBackdrop より前面） */
+#stageBackdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.16);
+  z-index: 225;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ▼ 中央セルの描画レイヤ（セル塗り＆辺塗り） */
+.center-draw-layer{
+  position:absolute;
+  left:50%; top:80%;
+  transform:translate(-50%,-50%);
+  width: calc(12 * var(--center-cell));
+  height: calc(12 * var(--center-cell));
+  z-index: 50;            /* 罫線(1)より前、ピース(60)より後ろ */
+  pointer-events: none;   /* 操作の邪魔をしない */
+}
+.center-draw-layer svg{
+  width:100%; height:100%;
+  display:block;
+  shape-rendering: crispEdges; /* にじみ抑制 */
+}
 
 
 
@@ -675,6 +761,12 @@
     <div id="tableArea" class="table-area">
       <!-- ▼ 中央 12x12 グリッド線 -->
       <div id="centerGrid" class="center-grid" aria-hidden="true"></div>
+
+<!-- ▼ 中央 12x12 セル描画（オーバーレイ） -->
+<div id="centerDraw" class="center-draw-layer" aria-hidden="true">
+  <svg viewBox="0 0 12 12" preserveAspectRatio="none"></svg>
+</div>
+
       <!-- ▼ ドラッグ同期ピースの描画レイヤ -->
       <div id="centerPiece" class="center-piece-layer" aria-label="drag-layer"></div>
 
@@ -730,6 +822,7 @@
 <button id="fabOpenSeat" class="fab" title="設定 / 座席選択" aria-label="設定">⚙️</button>
 <!-- 左下：捨て札 -->
 <button id="btnOpenTrash" class="trashBtn" title="トラッシュ" aria-label="捨て札">🗑️</button>
+<div id="seatBackdrop" class="hidden" style="position:fixed;inset:0;z-index:210;background:rgba(0,0,0,.24);"></div>
 
 <!-- 着席ポップ -->
 
@@ -744,6 +837,18 @@
     </div>
   </div>
   <div class="row">
+
+
+<!-- ステージ選択（seatPopの上に重ねる） -->
+<div id="stageBackdrop" class="hidden"></div>
+<div id="stagePop" class="stage-pop hidden" role="dialog" aria-modal="true" aria-label="ステージ選択">
+  <div class="row head" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+    <div class="title">ステージ選択</div>
+  </div>
+  <div id="stageGrid" class="stage-grid"></div>
+</div>
+
+
 
     <label>席を選択</label>
     <div id="seatTabs" class="tabs"></div>
@@ -822,6 +927,19 @@ const seatPop  = document.getElementById('seatPop');
 const seatTabs = document.getElementById('seatTabs');
 const btnSeatCancel = document.getElementById('btnSeatCancel');
 const fabOpenSeat = document.getElementById('fabOpenSeat'); // 既存
+const seatBackdrop = document.getElementById('seatBackdrop'); // ← 追加
+// --- ステージ選択ポップDOM ---
+const stagePop = document.getElementById('stagePop');
+const stageBackdrop = document.getElementById('stageBackdrop');
+const stageGrid = document.getElementById('stageGrid');
+seatBackdrop?.addEventListener('click', hideSeatPop); // ← 追加（外側クリックで閉じる）
+
+
+
+
+
+
+
 // 捨て札UI
 const btnOpenTrash  = document.getElementById('btnOpenTrash');
 const trashSheet    = document.getElementById('trashSheet');
@@ -932,6 +1050,305 @@ function updateHeader(){
   headerInfo.appendChild(spanMe);
 }
 
+// --- ミッション描画（セル塗り＆辺塗り） ---
+const centerDraw = document.getElementById('centerDraw');
+const centerDrawSvg = centerDraw?.querySelector('svg');
+
+const EDGE_COLORS = {
+  red:   '#e53935',
+  yellow:'#fdd835',
+  purple:'#8e24aa',
+  blue:  '#1e88e5',
+  green: '#43a047',
+};
+
+// 既存付近：EDGE_WIDTH/EDGE_CHAMFER 定義あたり
+const EDGE_WIDTH   = 0.22;          // 線の太さ（セル単位）
+const EDGE_CHAMFER = EDGE_WIDTH;    // 線の内側厚みと同じ量 → 端の45°がきれいに出る
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function cellXY(token){
+  // "F6" などを {x:5,y:5} の0始まりに
+  const t = String(token || '').trim().toUpperCase();
+  const m = t.match(/^([A-L])\s*(1[0-2]|[1-9])$/);
+  if(!m) return null;
+  return { x: m[1].charCodeAt(0) - 65, y: Number(m[2]) - 1 };
+}
+
+function drawFill(x, y, color = '#fff'){
+  const r = document.createElementNS('http://www.w3.org/2000/svg','rect');
+  r.setAttribute('x', x);
+  r.setAttribute('y', y);
+  r.setAttribute('width', 1);
+  r.setAttribute('height', 1);
+  r.setAttribute('fill', color);
+  return r;
+}
+
+// --- 連続ランをまとめて内側塗り＆端だけ45°キャップで描く ---
+function renderEdgesGrouped(parentG, edgeSpecs){
+  if (!edgeSpecs?.length) return;
+  const groups = { top:new Map(), bottom:new Map(), left:new Map(), right:new Map() };
+
+  // 1) マス座標に直して、向き×色×固定座標ごとにグルーピング
+  for (const e of edgeSpecs){
+    const c = cellXY(e.cell);
+    if (!c) continue;
+    const side = String(e.side||'').toLowerCase();
+    const color = EDGE_COLORS[e.color] || e.color || '#000';
+
+    if (side === 'top' || side === 'bottom'){
+      const y = side === 'top' ? c.y : c.y;     // ベースy（bottomはベース= y+1 を後で使う）
+      const key = `${color}|${y}`;
+      const map = groups[side];
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push({ x:c.x, color });
+    } else if (side === 'left' || side === 'right'){
+      const x = side === 'left' ? c.x : c.x;    // ベースx（rightはベース= x+1 を後で使う）
+      const key = `${color}|${x}`;
+      const map = groups[side];
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push({ y:c.y, color });
+    }
+  }
+
+  // 2) 水平ラン（top/bottom）をまとめて描画
+  for (const side of ['top','bottom']){
+    const map = groups[side];
+    for (const [key, arr] of map){
+      const [color] = key.split('|');
+      // x を昇順に並べて連続ラン（x, x+1, x+2, …）に分割
+      const xs = arr.map(o=>o.x).sort((a,b)=>a-b);
+      let runStart = null, last = null;
+      const flush = (y, x0, x1) => {
+        // x0..x1 は連続セル（右端は x1+1）
+        const t = EDGE_WIDTH, c = Math.min(EDGE_CHAMFER, (x1 - x0 + 1) / 2);
+        const yBase = (side === 'top') ? Number(key.split('|')[1]) : Number(key.split('|')[1]) + 1;
+        const dir   = (side === 'top') ? +1 : -1; // 内側方向（topは下へ、bottomは上へ）
+
+        const p = document.createElementNS(SVG_NS, 'polygon');
+        // 内側だけに寄せる：縦方向は [yBase, yBase + dir*t]
+        // ラン中央はまっすぐ、両端だけ45°（Δx = c, Δy = t）
+        const xL = x0, xR = x1 + 1;
+        const pts = [
+          `${xL},${yBase}`,           // 左上(ベース)
+          `${xR},${yBase}`,           // 右上(ベース)
+          `${xR - c},${yBase + dir*t}`, // 右下(斜めで45°)
+          `${xL + c},${yBase + dir*t}`, // 左下(斜めで45°)
+        ].join(' ');
+        p.setAttribute('points', pts);
+        p.setAttribute('fill', color);
+        parentG.appendChild(p);
+      };
+
+      const y = Number(key.split('|')[1]);
+      for (const x of xs){
+        if (runStart === null){ runStart = last = x; continue; }
+        if (x === last + 1){ last = x; continue; }
+        flush(y, runStart, last);
+        runStart = last = x;
+      }
+      if (runStart !== null) flush(y, runStart, last);
+    }
+  }
+
+  // 3) 垂直ラン（left/right）をまとめて描画
+  for (const side of ['left','right']){
+    const map = groups[side];
+    for (const [key, arr] of map){
+      const [color] = key.split('|');
+      const ys = arr.map(o=>o.y).sort((a,b)=>a-b);
+      let runStart = null, last = null;
+      const flush = (x, y0, y1) => {
+        const t = EDGE_WIDTH, c = Math.min(EDGE_CHAMFER, (y1 - y0 + 1) / 2);
+        const xBase = (side === 'left') ? Number(key.split('|')[1]) : Number(key.split('|')[1]) + 1;
+        const dir   = (side === 'left') ? +1 : -1; // 内側方向（leftは右へ、rightは左へ）
+
+        const p = document.createElementNS(SVG_NS, 'polygon');
+        // 内側だけに寄せる：横方向は [xBase, xBase + dir*t]
+        const yT = y0, yB = y1 + 1;
+        const pts = [
+          `${xBase},${yT}`,              // 上(ベース)
+          `${xBase},${yB}`,              // 下(ベース)
+          `${xBase + dir*t},${yB - c}`,  // 右(または左)内側へ＋上端/下端は45°
+          `${xBase + dir*t},${yT + c}`,
+        ].join(' ');
+        p.setAttribute('points', pts);
+        p.setAttribute('fill', color);
+        parentG.appendChild(p);
+      };
+
+      const x = Number(key.split('|')[1]);
+      for (const y of ys){
+        if (runStart === null){ runStart = last = y; continue; }
+        if (y === last + 1){ last = y; continue; }
+        flush(x, runStart, last);
+        runStart = last = y;
+      }
+      if (runStart !== null) flush(x, runStart, last);
+    }
+  }
+}
+
+
+
+function drawEdge(x, y, side, colorName = 'purple'){
+  const color = EDGE_COLORS[colorName] || colorName || '#000';
+  const t = EDGE_WIDTH, c = EDGE_CHAMFER;
+  const p = document.createElementNS(SVG_NS, 'polygon');
+  let pts = '';
+  if (side === 'top'){
+    const x0 = x, x1 = x + 1, yy = y;
+    // 中心(左右端)を結ぶ帯に、両端45°の面取り
+    pts = `${x0},${yy} ${x0+c},${yy - t/2} ${x1 - c},${yy - t/2} ${x1},${yy} ${x1 - c},${yy + t/2} ${x0 + c},${yy + t/2}`;
+  } else if (side === 'bottom'){
+    const x0 = x, x1 = x + 1, yy = y + 1;
+    pts = `${x0},${yy} ${x0+c},${yy + t/2} ${x1 - c},${yy + t/2} ${x1},${yy} ${x1 - c},${yy - t/2} ${x0 + c},${yy - t/2}`;
+  } else if (side === 'left'){
+    const xx = x, y0 = y, y1 = y + 1;
+    pts = `${xx},${y0} ${xx - t/2},${y0 + c} ${xx - t/2},${y1 - c} ${xx},${y1} ${xx + t/2},${y1 - c} ${xx + t/2},${y0 + c}`;
+  } else if (side === 'right'){
+    const xx = x + 1, y0 = y, y1 = y + 1;
+ pts = `${xx},${y0} ${xx + t/2},${y0 + c} ${xx + t/2},${y1 - c} ${xx},${y1} ${xx - t/2},${y1 - c} ${xx - t/2},${y0 + c}`;
+  }
+  p.setAttribute('points', pts);
+  p.setAttribute('fill', color);
+  return p;
+}
+
+function renderMissionOverlay(spec){
+  if(!centerDrawSvg) return;
+  centerDrawSvg.replaceChildren();
+  const gFill = document.createElementNS('http://www.w3.org/2000/svg','g');
+  const gEdge = document.createElementNS('http://www.w3.org/2000/svg','g');
+  centerDrawSvg.appendChild(gFill);
+  centerDrawSvg.appendChild(gEdge);
+
+  // セル塗り
+  (spec.fills || []).forEach(cell=>{
+    const c = cellXY(cell);
+    if (c) gFill.appendChild(drawFill(c.x, c.y, '#fff'));
+  });
+
+  // 辺塗り
+renderEdgesGrouped(gEdge, spec.edges || []);
+
+}
+
+function clearMissionOverlay(){
+  if (centerDrawSvg) centerDrawSvg.replaceChildren();
+}
+function updateMissionOverlay(){
+  // settingsがまだ来ていない間は描かない
+  if (typeof state?.stage === 'undefined' || state.stage === null) return;
+
+  const stg = Number(state.stage);
+
+  if (stg === 1){
+    renderMissionOverlay(MISSION_1);                 // 既存どおり1枚
+    centerDraw?.classList.remove('hidden');
+
+  } else if (stg === 2){
+    renderMissionOverlays([MISSION_2_FIG1, MISSION_2_FIG2]);  // 図1と図2を“各自の位置”に
+    centerDraw?.classList.remove('hidden');
+
+  } else if (stg === 3){
+    renderMissionOverlays([MISSION_3_FIG1, MISSION_3_FIG2]);  // 同上
+    centerDraw?.classList.remove('hidden');
+
+  } else {
+    clearMissionOverlay();
+    centerDraw?.classList.add('hidden'); // 視覚的にも非表示
+  }
+}
+
+// 図リストをそれぞれ独立した <g> に描画（置かれたセルは“指定の通り”に表示）
+function renderMissionOverlays(specList){
+  if (!centerDrawSvg) return;
+  centerDrawSvg.replaceChildren();
+
+  specList.forEach((spec, idx)=>{
+    const wrap = document.createElementNS(SVG_NS, 'g');
+    wrap.setAttribute('id', `mission-fig${idx+1}`);
+    centerDrawSvg.appendChild(wrap);
+
+    const gFill = document.createElementNS(SVG_NS, 'g');
+    const gEdge = document.createElementNS(SVG_NS, 'g');
+    wrap.appendChild(gFill);
+    wrap.appendChild(gEdge);
+
+    // セル白塗り（指定セルにそのまま描く）
+    (spec.fills || []).forEach(cell=>{
+      const c = cellXY(cell);
+      if (c) gFill.appendChild(drawFill(c.x, c.y, '#fff'));
+    });
+
+    // 辺塗り（指定セル・指定辺・指定色）
+renderEdgesGrouped(gEdge, spec.edges || []);
+
+  });
+}
+
+
+// ▼ ミッション#1（ご指定）
+//  白塗：F6, F7, G6, G7, H6
+//  辺塗：G7の右辺, H6の下辺（紫）
+const MISSION_1 = {
+  fills: ['F6','F7','G6','G7','H6'],
+  edges: [
+    { cell:'G7', side:'right',  color:'purple' },
+    { cell:'H6', side:'bottom', color:'purple' },
+  ],
+};
+const MISSION_2_FIG1 = {
+  fills: ['D3','D4','D5','D6','D7','E6','E7'],
+  edges: [
+    { cell:'D4', side:'right',  color:'red' },
+    { cell:'D5', side:'right',  color:'red' },
+    { cell:'E6', side:'top',    color:'red' },
+  ],
+};
+
+// ▼ ミッション #2 図2
+// 白塗：I8, I9, I10, J8, J9, K8
+// 辺塗：I10の右辺, J9の右辺と下辺, K8の下辺（青）
+const MISSION_2_FIG2 = {
+  fills: ['I8','I9','I10','J8','J9','K8'],
+  edges: [
+    { cell:'I10', side:'right',  color:'blue' },
+    { cell:'J9',  side:'right',  color:'blue' },
+    { cell:'J9',  side:'bottom', color:'blue' },
+    { cell:'K8',  side:'bottom', color:'blue' },
+  ],
+};
+
+// ▼ ミッション #3 図1
+// 白塗：E8, F7, F8, F9, G7, G8, G9, H8
+// 辺塗：F7の左辺と上辺, G7の右辺と上辺（黄）
+const MISSION_3_FIG1 = {
+  fills: ['E8','F7','F8','F9','G7','G8','G9','H8'],
+  edges: [
+    { cell:'F7', side:'left',   color:'yellow' },
+    { cell:'F7', side:'top',    color:'yellow' },
+    { cell:'G7', side:'right',  color:'yellow' },
+    { cell:'G7', side:'top',    color:'yellow' },
+  ],
+};
+
+// ▼ ミッション #3 図2
+// 白塗：J5, K5, K6, K7, K8  （※ご指定「J5.K5,6,7,8」は J5 と K5〜8 の意と解釈）
+// 辺塗：K5の上辺と右辺（緑）
+const MISSION_3_FIG2 = {
+  fills: ['J5','K5','K6','K7','K8'],
+  edges: [
+    { cell:'K5', side:'top',   color:'green' },
+    { cell:'K5', side:'right', color:'green' },
+  ],
+};
+
+
+// 画面幅や --center-cell が変わっても viewBox で追従するため再計算は不要。
+// 必要があれば他のミッションに差し替えるだけ：renderMissionOverlay(MISSION_X)
 
   // === カード面 Element ===
   function makeCardFaceEl(cardId){
@@ -999,8 +1416,8 @@ function updateHeader(){
     const room = `rooms/${state.code}`;
 
     onValue(ref(db, `${room}/settings`), snap=>{
-      const st = snap.val() || {}; state.hostUid = st.hostUid || null; state.playersN = st.players || null;
-      const hostBar = document.getElementById('hostBar');
+const st = snap.val() || {}; state.hostUid = st.hostUid || null; state.playersN = st.players || null; state.stage = Number(st.stage || 1);state.stageFig = Number(st.stageFig || 1); 
+  updateMissionOverlay(); // ← ステージ1のときだけ塗る      const hostBar = document.getElementById('hostBar');
       const btn1 = document.getElementById('btn1p'); const btn2 = document.getElementById('btn2p'); const btn3 = document.getElementById('btn3p'); const btn4 = document.getElementById('btn4p'); const btnHost = document.getElementById('btnBecomeHost'); const hostInfo = document.getElementById('hostInfo');
       if (hostBar){ hostBar.style.display = 'block'; }
       if (btnHost){ btnHost.onclick = async()=>{ await set(ref(db, `${room}/settings/hostUid`), state.uid); }; }
@@ -1129,8 +1546,8 @@ trashBackdrop?.addEventListener('click', ()=> show(trashSheet, false));
   }
 
   // === 座席UI ===
-function showSeatPop(){ show(seatPop, true); renderSeatTabs(); renderPlayersTabs(); }
-function hideSeatPop(){ show(seatPop, false); }
+function showSeatPop(){  show(seatBackdrop, true);   show(seatPop, true); renderSeatTabs(); renderPlayersTabs(); }
+function hideSeatPop(){ show(seatPop, false);  show(seatBackdrop, false);    }
 
 function renderSeatTabs(){
   if (!seatTabs) return;
@@ -1248,13 +1665,79 @@ function renderPlayersTabs(){
 
     // クリックはホストのみ有効
     el.onclick = isHost ? async () => {
-      await setPlayersAndDeal(n); // ← 既存：配布＆ラウンド初期化
-      // 反映後に各UIを更新
+      await setPlayersAndDeal(n); // 既存：配布＆ラウンド初期化
       renderSeatTabs();
       renderPlayersTabs();
     } : null;
   });
+
+  // ▼ ここに貼り付け
+  // --- ステージ選択ボタン（ホストのみ表示） ---
+  let btnOpenStage = document.getElementById('btnOpenStage');
+  if (isHost) {
+    if (!btnOpenStage) {
+      btnOpenStage = document.createElement('button');
+      btnOpenStage.id = 'btnOpenStage';
+      btnOpenStage.className = 'btn sm';
+      btnOpenStage.style.marginLeft = 'auto';   // 右寄せ
+      playersRow.appendChild(btnOpenStage);
+    }
+    const n = Number(state.stage || 1);
+    btnOpenStage.textContent = `# ${n}`;
+    btnOpenStage.onclick = showStagePop;
+  } else {
+    if (btnOpenStage) btnOpenStage.remove();
+  }
+
+} // ← 関数の閉じカッコ
+
+
+
+function showStagePop(){
+  renderStageGrid();
+  positionStagePopOverSeat();
+  show(stageBackdrop, true);
+  show(stagePop, true);
 }
+
+function hideStagePop(){
+  show(stagePop, false);
+  show(stageBackdrop, false);
+}
+
+function positionStagePopOverSeat(){
+  if (!seatPop || !stagePop) return;
+  const r = seatPop.getBoundingClientRect();
+  const gap = 8; // seatPopの上端から少し離す
+  const bottom = (window.innerHeight - r.top) + gap;
+  stagePop.style.bottom = `${bottom}px`;
+  // 横位置はCSSで left:50% / translateX(-50%) 済み
+}
+
+// 画面サイズが変わったら追従
+window.addEventListener('resize', ()=>{
+  if (!stagePop.classList.contains('hidden')) positionStagePopOverSeat();
+});
+
+function renderStageGrid(){
+  if (!stageGrid) return;
+  const room = `rooms/${state.code}`;
+  const cur = Number(state.stage || 1);
+  stageGrid.innerHTML = '';
+  for (let i=1; i<=20; i++){
+    const b = document.createElement('button');
+    b.className = 'stage-btn' + (i===cur ? ' active' : '');
+    b.textContent = String(i);
+    b.onclick = async ()=>{
+      await set(ref(db, `${room}/settings/stage`), i);
+      hideStagePop();
+      // ボタン表示更新（ホスト行のラベル更新）
+      renderPlayersTabs?.();
+    };
+    stageGrid.appendChild(b);
+  }
+}
+
 
 // --- ページクローズ時だけ「離席」させる ---
 function scheduleSeatLeaveOnClose(){
