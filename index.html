@@ -727,21 +727,32 @@
 
 
 
+
+
+
+
+
+/* === モバイルの右余白対策（末尾に追記） === */
 @media (max-width: 600px){
-  :root{
-    --opp-right-nudge: 18px;   /* 既存のまま */
+  /* 横スクロールを発生させない（保険） */
+  html, body { overflow-x: hidden; }
+
+  /* 右プレイヤー：right が負にならないようクランプ */
+  .opp.B{
+    right: max(0px, calc(var(--opp-side-x) + var(--opp-right-nudge)));
   }
-  /* これで right が負にならず、画面の右外へはみ出さない */
-  .opp.B{ right: max(0px, calc(var(--opp-side-x) + var(--opp-right-nudge))); }
+
+  /* 右側の“場”も同様に右端内に収める（念のため） */
+  .play-B{
+    right: max(0px, var(--play-side-x));
+  }
+
+  /* 子要素のはみ出しで横幅が膨らまないように（対応広めにしたい場合は hidden に） */
+  .table-area{
+    overflow-x: clip;  /* 古い環境なら overflow-x:hidden; でもOK */
+    overflow-y: visible;
+  }
 }
-@media (max-width: 600px){
-  html, body, .table-area{ overflow-x: hidden; }
-}
-
-
-
-
-
 
 
 
