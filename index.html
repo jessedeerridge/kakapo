@@ -1227,7 +1227,7 @@ function renderMissionOverlay(spec){
   const gFill = document.createElementNS(SVG_NS,'g');
   const gImg  = document.createElementNS(SVG_NS,'g');
   const gEdge = document.createElementNS(SVG_NS,'g');
-  centerDrawSvg.append(defs, gFill, gImg, gEdge);
+  centerDrawSvg.append(defs, gFill, gEdge, gImg);
 
   // セル塗り（同時に filled 座標を収集）
   const filled = [];
@@ -1310,23 +1310,61 @@ function updateMissionOverlay(){
 // 図リストをそれぞれ独立した <g> に描画（置かれたセルは“指定の通り”に表示）
 function renderMissionOverlays(specList){
   if (!centerDrawSvg) return;
+
+  // 一度だけクリアして、同一SVG内に複数の図を重ねる
   centerDrawSvg.replaceChildren();
 
-  specList.forEach((spec, idx)=>{
-    const wrap = document.createElementNS(SVG_NS, 'g');
-    wrap.setAttribute('id', `mission-fig${idx+1}`);
-    centerDrawSvg.appendChild(wrap);
+  // 共通レイヤ
+  const defs = document.createElementNS(SVG_NS,'defs');
+  const gFill = document.createElementNS(SVG_NS,'g');
+  const gImg  = document.createElementNS(SVG_NS,'g');
+  const gEdge = document.createElementNS(SVG_NS,'g');
+  centerDrawSvg.append(defs, gFill, gEdge, gImg);
 
-    const gFill = document.createElementNS(SVG_NS, 'g');
-    const gEdge = document.createElementNS(SVG_NS, 'g');
-    wrap.appendChild(gFill);
-    wrap.appendChild(gEdge);
-
-    // セル白塗り（指定セルにそのまま描く）
-    (spec.fills || []).forEach(cell=>{
+  specList.forEach((spec, idx) => {
+    // 1) 塗り（filled 収集）
+    const filled = [];
+    (spec.fills || []).forEach(cell => {
       const c = cellXY(cell);
-      if (c) gFill.appendChild(drawFill(c.x, c.y, '#fff'));
+      if (c){
+        gFill.appendChild(drawFill(c.x, c.y, '#fff'));
+        filled.push(c);
+      }
     });
+
+    // 2) 画像（filled の合成を clipPath にしてはみ出しカット）
+    if (spec.image && filled.length){
+      const minX = Math.min(...filled.map(p=>p.x));
+      const minY = Math.min(...filled.map(p=>p.y));
+      const maxX = Math.max(...filled.map(p=>p.x)) + 1;
+      const maxY = Math.max(...filled.map(p=>p.y)) + 1;
+
+      const clipId = `clip-m${Date.now()}-${idx}`;
+      const clip = document.createElementNS(SVG_NS,'clipPath');
+      clip.setAttribute('id', clipId);
+
+      filled.forEach(({x,y})=>{
+        const r = document.createElementNS(SVG_NS,'rect');
+        r.setAttribute('x', x);
+        r.setAttribute('y', y);
+        r.setAttribute('width', 1);
+        r.setAttribute('height', 1);
+        clip.appendChild(r);
+      });
+      defs.appendChild(clip);
+
+      const img = document.createElementNS(SVG_NS,'image');
+      img.setAttribute('x', minX);
+      img.setAttribute('y', minY);
+      img.setAttribute('width',  maxX - minX);
+      img.setAttribute('height', maxY - minY);
+      img.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+      img.setAttribute('clip-path', `url(#${clipId})`);
+      img.setAttribute('href', spec.image);
+      img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', spec.image);
+      gImg.appendChild(img);
+    }
+
 
     // 辺塗り（指定セル・指定辺・指定色）
 renderEdgesGrouped(gEdge, spec.edges || []);
