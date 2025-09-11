@@ -732,11 +732,25 @@
 <button id="btnOpenTrash" class="trashBtn" title="トラッシュ" aria-label="捨て札">🗑️</button>
 
 <!-- 着席ポップ -->
+
 <div id="seatPop" class="seat-pop hidden" role="dialog" aria-modal="true" aria-label="座席選択">
+  <div class="row hidden" id="playersRow">
+    <label>人数</label>
+    <div id="playersTabs" class="tabs">
+      <div class="tab" data-n="1">1</div>
+      <div class="tab" data-n="2">2</div>
+      <div class="tab" data-n="3">3</div>
+      <div class="tab" data-n="4">4</div>
+    </div>
+  </div>
   <div class="row">
+
     <label>席を選択</label>
     <div id="seatTabs" class="tabs"></div>
   </div>
+
+
+
   <div class="row" style="justify-content:flex-end">
     <button class="btn sm ghost" id="btnSeatCancel">観戦</button>
   </div>
@@ -782,6 +796,8 @@
   const nameInput  = document.getElementById('nameInput');
   const codeInput  = document.getElementById('codeInput');
   const btnJoin    = document.getElementById('btnJoin');
+const playersRow  = document.getElementById('playersRow');
+const playersTabs = document.getElementById('playersTabs');
 
   const handBar  = document.getElementById('handBar');
   const oppA     = document.getElementById('oppA');
@@ -993,7 +1009,7 @@ function updateHeader(){
       if (btn3){ btn3.onclick = async ()=>{ await setPlayersAndDeal(3); }; }
       if (btn4){ btn4.onclick = async ()=>{ await setPlayersAndDeal(4); }; }
       if (hostInfo){ hostInfo.textContent = `ホスト：${st.hostUid ? (st.hostUid===state.uid?'あなた':st.hostUid.slice(0,4)) : '未設定'}`; }
- if (!seatPop.classList.contains('hidden')) renderSeatTabs();
+ if (!seatPop.classList.contains('hidden')) { renderSeatTabs(); renderPlayersTabs(); }
       updateHeader(); renderAll();
     });
 
@@ -1001,7 +1017,7 @@ function updateHeader(){
 
     onValue(ref(db, `${room}/seats`), snap=>{
       state.seats = snap.val() || {}; state.mySeat = null; for (const k of Object.keys(state.seats)){ if (state.seats[k]?.uid === state.uid){ state.mySeat = Number(k); break; } }
- if (!seatPop.classList.contains('hidden')) renderSeatTabs();
+ if (!seatPop.classList.contains('hidden')) { renderSeatTabs(); renderPlayersTabs(); }
       renderAll();
     });
 
@@ -1113,7 +1129,7 @@ trashBackdrop?.addEventListener('click', ()=> show(trashSheet, false));
   }
 
   // === 座席UI ===
-function showSeatPop(){ show(seatPop, true); renderSeatTabs(); }
+function showSeatPop(){ show(seatPop, true); renderSeatTabs(); renderPlayersTabs(); }
 function hideSeatPop(){ show(seatPop, false); }
 
 function renderSeatTabs(){
@@ -1216,6 +1232,29 @@ fabOpenSeat?.addEventListener('click', showSeatPop);
     }
     if (Object.keys(updates).length){ await update(ref(db), updates); }
   }
+function renderPlayersTabs(){
+  if (!playersRow || !playersTabs) return;
+
+  // ホストのみ表示
+  const isHost = (state.hostUid && state.uid && state.hostUid === state.uid);
+  playersRow.classList.toggle('hidden', !isHost);
+
+  // 現在の人数Nをハイライト
+  const N = Number(state.playersN || 4);
+  const tabs = Array.from(playersTabs.querySelectorAll('.tab'));
+  tabs.forEach(el => {
+    const n = Number(el.dataset.n);
+    el.classList.toggle('active', n === N);
+
+    // クリックはホストのみ有効
+    el.onclick = isHost ? async () => {
+      await setPlayersAndDeal(n); // ← 既存：配布＆ラウンド初期化
+      // 反映後に各UIを更新
+      renderSeatTabs();
+      renderPlayersTabs();
+    } : null;
+  });
+}
 
 // --- ページクローズ時だけ「離席」させる ---
 function scheduleSeatLeaveOnClose(){
