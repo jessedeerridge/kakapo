@@ -569,13 +569,6 @@
     transform: none;            /* 念のため拡大禁止 */
   }
 
-  /* 画像を使う場合の保険（はみ出し/拡大防止） */
-  #doubleScanArea img{
-    max-width: 100%;
-    height: auto;
-  }
-}
-
 /* === スマホ：ダブルスキャン“ポップ内のカード”を少し上に寄せる === */
 @media (max-width: 600px){
   /* まず、ラベル＋丸行（.doubleScan）とカードの間のスキマを詰める */
@@ -583,8 +576,13 @@
     margin-bottom: 2px;   /* 既存 6px → 2px（0〜4pxで好み調整） */
   }
 
-
-
+/* スマホ：上プレイヤーのネーム＆手札を下げる（後勝ちの追記） */
+@media (max-width: 600px){
+  :root{
+    --opp-top-y: 30px;       /* 上プレイヤー全体（.opp.C）を下へ。ネームも一緒に下がる */
+  
+  }
+}
 
 
 
