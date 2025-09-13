@@ -1064,7 +1064,7 @@ trashBackdrop?.addEventListener('click', () => show(trashSheet, false));
     dragging: { id: null, round: null, raf: 0, offPx: {x:0,y:0}, ownLock: false },
   trash: {},   // { [cardId]: true } 捨て札累積フラグ
     used:  {},   // ★ プレイ済み累積フラグ（勝者含む）
-
+_lastStage: null, 
   };
 
   // ==== ユーティリティ ====
@@ -1387,6 +1387,16 @@ function updateMissionOverlay(){
     renderMissionOverlays([MISSION_3_FIG1, MISSION_3_FIG2]);  // 同上
     centerDraw?.classList.remove('hidden');
 
+  } else if (stg === 4){
+    renderMissionOverlays([MISSION_4_FIG1, MISSION_4_FIG2]);  // #4 図1/図2
+    centerDraw?.classList.remove('hidden');
+
+ } else if (stg === 5){
+    renderMissionOverlays([MISSION_5_FIG1, MISSION_5_FIG2]);  // #5 図1/図2
+    centerDraw?.classList.remove('hidden');
+
+
+
   } else {
     clearMissionOverlay();
     centerDraw?.classList.add('hidden'); // 視覚的にも非表示
@@ -1534,7 +1544,63 @@ const MISSION_3_FIG2 = {
   ],
 image: 'bird5.png' 
 };
+const MISSION_4_FIG1 = {
+  fills: ['E2','E3','E4','E5','E6','F5','F6'],
+  edges: [
+    { cell:'E2', side:'top',   color:'red' },
+    { cell:'E2', side:'left',  color:'red' },
+    { cell:'E3', side:'left',  color:'red' },
+    { cell:'E4', side:'left',  color:'red' },
+  ],
+  image: 'bird6.png'
+};
 
+// ▼ ミッション #4 図2
+// 白塗：E8, F8, F9, F10, F11, F12
+// 辺塗：E8の下辺、F8の下辺、F9〜F12の左辺（緑）
+const MISSION_4_FIG2 = {
+  fills: ['E8','F8','F9','F10','F11','F12'],
+  edges: [
+    { cell:'E8', side:'bottom', color:'green' },
+    { cell:'F8', side:'bottom', color:'green' },
+    { cell:'F9',  side:'left',  color:'green' },
+    { cell:'F10', side:'left',  color:'green' },
+    { cell:'F11', side:'left',  color:'green' },
+    { cell:'F12', side:'left',  color:'green' },
+  ],
+  image: 'bird7.png'
+};
+
+// ▼ ミッション #5 図1
+// 白塗：D4, D5, D6, E4, F4
+// 辺塗：D5, D6の右辺（紫）、E4, F4の下辺（紫）、F4の右辺（青）
+const MISSION_5_FIG1 = {
+  fills: ['D4','D5','D6','E4','F4'],
+  edges: [
+    { cell:'D5', side:'right',  color:'purple' },
+    { cell:'D6', side:'right',  color:'purple' },
+    { cell:'E4', side:'bottom', color:'purple' },
+    { cell:'F4', side:'bottom', color:'purple' },
+    { cell:'F4', side:'right',  color:'blue' },
+  ],
+  image: 'bird8.png'
+};
+
+// ▼ ミッション #5 図2
+// 白塗：G8, H7, H8, H9, I8
+// 辺塗：G8（左・上：青）、H7（左：青／上・右：緑）、I8（上：緑）
+const MISSION_5_FIG2 = {
+  fills: ['G8','H7','H8','H9','I8'],
+  edges: [
+    { cell:'G8', side:'left',  color:'blue' },
+    { cell:'G8', side:'top',   color:'blue' },
+    { cell:'H7', side:'left',  color:'blue' },
+    { cell:'H7', side:'top',   color:'green' },
+    { cell:'H7', side:'right', color:'green' },
+    { cell:'I8', side:'top',   color:'green' },
+  ],
+  image: 'bird9.png'
+};
 
 // 画面幅や --center-cell が変わっても viewBox で追従するため再計算は不要。
 // 必要があれば他のミッションに差し替えるだけ：renderMissionOverlay(MISSION_X)
@@ -1606,8 +1672,27 @@ show(fabOpenSeat, true);
     const room = `rooms/${state.code}`;
 
     onValue(ref(db, `${room}/settings`), snap=>{
-const st = snap.val() || {}; state.hostUid = st.hostUid || null; state.playersN = st.players || null; state.stage = Number(st.stage || 1);state.stageFig = Number(st.stageFig || 1); 
-  updateMissionOverlay(); // ← ステージ1のときだけ塗る      const hostBar = document.getElementById('hostBar');
+      const st = snap.val() || {};
+      // 変更検知用に前値を退避
+      const prevStage = state._lastStage;
+
+      state.hostUid  = st.hostUid || null;
+      state.playersN = st.players || null;
+      state.stage    = Number(st.stage || 1);
+      state.stageFig = Number(st.stageFig || 1);
+      state._lastStage = state.stage; // ★ 更新
+
+      // ★ ステージが変更されたら（かつ自分がホストなら）即リセット＆再配布
+      const iAmHost = (state.hostUid && state.uid && state.hostUid === state.uid);
+      if (typeof prevStage === 'number' && prevStage !== state.stage && iAmHost) {
+        // playersN は維持したまま再配布。座席(seats)は触らない
+        const N = Number(state.playersN || 4);
+        setPlayersAndDeal(N).catch(console.error);
+      }
+
+      updateMissionOverlay(); // ← ステージ毎のミッション描画更新
+      const hostBar = document.getElementById('hostBar');
+
       const btn1 = document.getElementById('btn1p'); const btn2 = document.getElementById('btn2p'); const btn3 = document.getElementById('btn3p'); const btn4 = document.getElementById('btn4p'); const btnHost = document.getElementById('btnBecomeHost'); const hostInfo = document.getElementById('hostInfo');
       if (hostBar){ hostBar.style.display = 'block'; }
       if (btnHost){ btnHost.onclick = async()=>{ await set(ref(db, `${room}/settings/hostUid`), state.uid); }; }
