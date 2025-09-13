@@ -799,7 +799,11 @@ body:has(#afterPanel:not(.hidden)) main {
 }
 
 
-
+#nextPanel, #btnNextRound {
+  z-index: 200;           /* 他レイヤより前面に */
+  pointer-events: auto !important;
+  touch-action: manipulation; /* タップ即時反応、ダブルタップズーム抑止 */
+}
 
 
 
@@ -1562,7 +1566,6 @@ const MISSION_4_FIG2 = {
   fills: ['E8','F8','F9','F10','F11','F12'],
   edges: [
     { cell:'E8', side:'bottom', color:'green' },
-    { cell:'F8', side:'bottom', color:'green' },
     { cell:'F9',  side:'left',  color:'green' },
     { cell:'F10', side:'left',  color:'green' },
     { cell:'F11', side:'left',  color:'green' },
