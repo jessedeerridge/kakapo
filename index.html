@@ -808,12 +808,6 @@ body:has(#afterPanel:not(.hidden)) main {
 
 
 
-.nextBtn:disabled{
-  opacity:.5;
-  cursor:not-allowed;
-  background:#9e9e9e;
-  border-color:#9e9e9e;
-}
 
 
 
@@ -1019,162 +1013,6 @@ const playersTabs = document.getElementById('playersTabs');
   const centerGrid  = document.getElementById('centerGrid');   // 背景の12x12罫線
   const centerPiece = document.getElementById('centerPiece');  // 勝者ピースの12x12（同期ドラッグ）
 
-// === 重なり検出 & 次ラウンドボタン文言更新 ==================================
-
-// 白ピース判定：data-color / class / 実際の色のいずれかで白なら true
-function isWhitePiece(pieceEl){
-  if (!pieceEl) return false;
-  const dc = (pieceEl.dataset?.color || '').toLowerCase();
-  if (dc === 'white' || dc === '白') return true;
-  if (pieceEl.classList.contains('white')) return true;
-  // 計算色（currentColor 相当）での白判定
-  const col = getComputedStyle(pieceEl).color.replace(/\s+/g,'').toLowerCase();
-  return (col === 'rgb(255,255,255)' || col === '#fff' || col === '#ffffff');
-}
-
-
-
-
-// 2矩形の交差判定（>0 で重なり）
-function intersects(r1, r2){
-  return r1.left < r2.right && r1.right > r2.left && r1.top < r2.bottom && r1.bottom > r2.top;
-}
-
-// .piece 配下の .sq 同士で重なりを総当たりチェック
-function detectPieceOverlap(){
-  const pieces = Array.from(centerPiece.querySelectorAll('.piece'));
-  // ピースごとに矩形配列を作る（.sq は回転/反転/平行移動後の絶対座標で評価）
-  const list = pieces.map(p => ({
-    el: p,
-    white: isWhitePiece(p),
-    rects: Array.from(p.querySelectorAll('.sq')).map(sq => sq.getBoundingClientRect())
-  }));
-
-  let any = false, white = false;
-
-  for (let i = 0; i < list.length; i++){
-    for (let j = i + 1; j < list.length; j++){
-      const A = list[i], B = list[j];
-      // 粗い早期終了：ピース外接矩形で当たらなければ中の .sq は見ない
-      const pRectA = A.el.getBoundingClientRect();
-      const pRectB = B.el.getBoundingClientRect();
-      if (!intersects(pRectA, pRectB)) continue;
-
-      for (const ra of A.rects){
-        for (const rb of B.rects){
-          if (intersects(ra, rb)){
-            any = true;
-            if (A.white || B.white) white = true;
-            if (white) return { any:true, white:true }; // 最上位の表示が確定
-          }
-        }
-      }
-    }
-  }
-  return { any, white };
-}
-
-function detectFigureOverlap(){
-  // 図形セル（drawFill で class='fig-cell' を付与済み）
-  const figRects = Array.from(document.querySelectorAll('#centerDraw svg rect.fig-cell'))
-    .map(el => el.getBoundingClientRect());
-  if (figRects.length === 0) return false; // 図が無ければ重なり無し
-
-  // すべてのピースの各セル矩形
-  const pieceRects = Array.from(centerPiece.querySelectorAll('.piece .sq'))
-    .map(el => el.getBoundingClientRect());
-
-  for (const pr of pieceRects){
-    for (const fr of figRects){
-      if (intersects(pr, fr)) return true;
-    }
-  }
-  return false;
-}
-
-// 12x12テーブル（centerPiece領域）からのはみ出し検出
-function detectOutOfBounds(){
-  const layer = centerPiece?.getBoundingClientRect?.();
- if (!layer) return false;
-  // すべてのピースの各セル .sq の絶対座標で判定（回転/反転後でも正しく検出）
-  const rects = Array.from(centerPiece.querySelectorAll('.piece .sq'))
-    .map(el => el.getBoundingClientRect());
-  for (const r of rects){
-    if (r.left < layer.left || r.top < layer.top ||
-        r.right > layer.right || r.bottom > layer.bottom){
-      return true;
-    }
-  }
-  return false;
-}
-
-// ボタン文言更新（必要なら無効化もここで）
-function updateNextRoundLabel(){
-  // -1) まず 12x12 からのはみ出しを最優先で判定
-  if (detectOutOfBounds()){
-    btnNextRound.textContent = 'はみ出ている';
-    btnNextRound.disabled = true;
-    return;
-  }
-  if (detectFigureOverlap()){
-    btnNextRound.textContent = 'ピースが重なっている';
-   btnNextRound.disabled = true; // 必要なら有効化
-    return;
-  }
-
-  // 1) ピース同士の重なり（白重なり > 重なり）
-  const { any, white } = detectPieceOverlap();  if (white){
-   btnNextRound.textContent = 'ピースが重なっている';
-   btnNextRound.disabled = true; // 必要なら
-    return;
-  }
-  if (any){
-    btnNextRound.textContent = 'ピースが重なっている';
-   btnNextRound.disabled = true; // 必要なら
-    return;
-  }
-
-  // 2) 重なりが無い場合のみ、既存の「隣接」表示を尊重して維持
-  const cur = (btnNextRound.textContent || '').trim();
-  if (cur.includes('隣接')) {
-    return; // 「辺隣接」などはそのまま
-  }
-
-  // 3) どちらも無ければ通常表示
-  btnNextRound.textContent = '次ラウンド';
-  // btnNextRound.disabled = false;
-}
-
-// centerPiece 以下の変化（追加/移動/回転/反転/サイズ変更）で更新をかける
-const overlapObserver = new MutationObserver(() => {
-  // レイアウト確定後の矩形を取りたいので rAF で1フレーム後に実行
-  requestAnimationFrame(updateNextRoundLabel);
-});
-overlapObserver.observe(centerPiece, {
-  childList: true,
-  subtree: true,
-  attributes: true,
-  attributeFilter: ['style','class','data-color']
-});
-
-// ▼ 追加：図の描画レイヤ（centerDraw）側の変化でも更新
-const figObserver = new MutationObserver(() => {
-  requestAnimationFrame(updateNextRoundLabel);
-});
-figObserver.observe(document.getElementById('centerDraw'), {
-  childList: true,
-  subtree: true
-});
-
-
-// 初期化やリサイズ・ズーム時にも再評価
-window.addEventListener('resize', updateNextRoundLabel);
-document.addEventListener('DOMContentLoaded', updateNextRoundLabel);
-
-// 念のため明示的に一度実行
-updateNextRoundLabel();
-
-
 const seatPop  = document.getElementById('seatPop');
 const seatTabs = document.getElementById('seatTabs');
 const btnSeatCancel = document.getElementById('btnSeatCancel');
@@ -1327,9 +1165,6 @@ function cellXY(token){
   return { x: m[1].charCodeAt(0) - 65, y: Number(m[2]) - 1 };
 }
 
-
-
-
 function drawFill(x, y, color = '#fff'){
   const r = document.createElementNS('http://www.w3.org/2000/svg','rect');
   r.setAttribute('x', x);
@@ -1337,7 +1172,6 @@ function drawFill(x, y, color = '#fff'){
   r.setAttribute('width', 1);
   r.setAttribute('height', 1);
   r.setAttribute('fill', color);
-r.setAttribute('class','fig-cell');
   return r;
 }
 
@@ -1906,10 +1740,7 @@ onValue(ref(db, `${room}/plays`), snap=>{
   const canNext = !!(vict && Number(vict.round) === r && mySeat && winnerSeat && mySeat === winnerSeat);
 
   show(nextPanel, canNext);
-updateNextButtonLabel(); 
 }
-updateNextButtonLabel();
-
       // ★ ここから追加：ダブルスキャンのトークン描画更新
       const used = state.game.doubleScanUsed || 0;
       const circles = document.querySelectorAll('#doubleScanArea .circles span');
@@ -2699,94 +2530,6 @@ function renderCenterPieces(){
     const interactive = (r === rNow);
     drawPieceEl(r, id, obj, interactive);
   }
-  updateNextButtonLabel();
-
-}
-// === 辺隣接チェック（同色で1辺でも接していれば true） ===
-function hasSameColorEdgeAdjacency() {
-  const rNow = currentRound();
-  const pieces = [];
-  for (let r = 1; r <= rNow; r++) {
-    const data = state.centerPieces?.[r] || {};
-    for (const obj of Object.values(data)) pieces.push(obj);
-  }
-  if (!pieces.length) return false;
-  // 1) 各ピースの占有セル（盤面座標）を求める
-  function transformedCells(obj){
-    const baseW = obj.w || 1, baseH = obj.h || 1;
-    const ang = ((obj.angle || 0) % 360 + 360) % 360; // 0/90/180/270
-    const flipX = !!obj.flipX, flipY = !!obj.flipY;
-    const rel = Array.isArray(obj.rel) ? obj.rel : [];
-
-    // 回転変換（左上原点の整数グリッド回転）
-    function rot(rc){
-      const [r,c] = rc;
-      if (ang === 0)   return [r, c];
-      if (ang === 90)  return [c, baseW-1 - r];
-      if (ang === 180) return [baseH-1 - r, baseW-1 - c];
-      if (ang === 270) return [baseW-1 - c, r];
-      return [r,c];
-    }
-    // 回転後の幅高さ
-    const rotW = (ang % 180 === 0) ? baseW : baseH;
-    const rotH = (ang % 180 === 0) ? baseH : baseW;
-
-    // フリップは回転の「後」にかける（描画の transform と同じ順序：rotate → scale）
-    function flp(rc){
-      let [r,c] = rc;
-      if (flipX) c = (rotW - 1) - c;
-      if (flipY) r = (rotH - 1) - r;
-      return [r,c];
-    }
-
-    // 盤面座標へ
-    const out = [];
-    for (const rc of rel){
-      const p1 = rot(rc);
-      const p2 = flp(p1);
-      out.push([obj.y + p2[0], obj.x + p2[1]]); // [row, col] = [y, x]
-    }
-    return out;
-  }
-
-  // 2) 同色ごとに、ピース単位のセル集合を作る
-  const byColor = new Map(); // color -> [{cells:Set('y,x')}, ...]
-  for (const obj of pieces){
-    const color = obj?.color;
-    if (!color) continue;
-    const cells = transformedCells(obj);
-    const set = new Set(cells.map(([y,x]) => `${y},${x}`));
-    if (!byColor.has(color)) byColor.set(color, []);
-    byColor.get(color).push({ set });
-  }
-
-  // 3) 同色の任意2ピース間で、辺で隣接（マンハッタン距離1）があるか調べる
-  for (const [_color, arr] of byColor){
-    if (arr.length < 2) continue;
-    for (let i=0; i<arr.length; i++){
-      const A = arr[i].set;
-      for (let j=i+1; j<arr.length; j++){
-        const B = arr[j].set;
-        // Aの各セルの上下左右を見てBにあれば隣接
-        for (const key of A){
-          const [y,x] = key.split(',').map(Number);
-          if (B.has(`${y-1},${x}`) || B.has(`${y+1},${x}`) || B.has(`${y},${x-1}`) || B.has(`${y},${x+1}`)){
-            return true;
-          }
-        }
-      }
-    }
-  }
-  return false;
-}
-
-// ラベル更新（可視/不可視に関わらず文言だけ切り替える）
-function updateNextButtonLabel(){
-  if (!btnNextRound) return;
-  const adj = hasSameColorEdgeAdjacency();
-  btnNextRound.textContent = adj ? '同色の辺が隣接している' : '次ラウンド';
-  btnNextRound.title = btnNextRound.textContent;
-btnNextRound.disabled = !!adj; 
 }
 
 
