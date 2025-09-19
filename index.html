@@ -818,7 +818,23 @@ body:has(#afterPanel:not(.hidden)) main {
 }
 
 
-
+/* ▼ セルテーブルの外側・上部に出す警告ラベル */
+.grid-warning{
+  position: absolute;
+  left: 50%;
+  /* セルテーブル上辺より少し上に配置（80%中心・高さ=12セル） */
+  top: calc(80% - (12 * var(--center-cell)) / 2 - 18px);
+  transform: translateX(-50%);
+  color: #b91c1c;                /* 赤系 */
+ font-weight: 800;
+  background: rgba(255,255,255,.92);
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  padding: 4px 8px;
+  z-index: 61;                   /* ピース(60)より前に */
+  pointer-events: none;          /* 操作は邪魔しない */
+  white-space: nowrap;
+}
 
 
 
@@ -857,6 +873,7 @@ body:has(#afterPanel:not(.hidden)) main {
     <div id="tableArea" class="table-area">
       <!-- ▼ 中央 12x12 グリッド線 -->
       <div id="centerGrid" class="center-grid" aria-hidden="true"></div>
+<div id="gridWarn" class="grid-warning hidden" aria-live="polite"></div>
 
 <!-- ▼ 中央 12x12 セル描画（オーバーレイ） -->
 <div id="centerDraw" class="center-draw-layer" aria-hidden="true">
@@ -2978,32 +2995,53 @@ function anyFigureOverlap(allPieces, override){
 }
 
 function setNextBtnStatus({ overhang, fOverlap, forbidden, overlap, adjacent }){
-  const btn = document.getElementById('btnNextRound');
+  const btn  = document.getElementById('btnNextRound');
+  const warn = document.getElementById('gridWarn');
   if (!btn) return;
-  if (overhang){
-    btn.textContent = 'スコープ外に出ている';
+
+  // ボタン表示と同時に、上部ラベル用のメッセージも決定
+  let msg = '';
+ if (overhang){
+    msg = 'スコープ外に出ている';
+    btn.textContent = msg;
     btn.disabled = true;
-    btn.title = 'ピースがセルテーブルからはみ出しています';
+   btn.title = 'ピースがセルテーブルからはみ出しています';
   }else if (fOverlap){
-    btn.textContent = '鳥ピースと重なっている';
+    msg = '鳥ピースと重なっている';
+    btn.textContent = msg;
     btn.disabled = true;
     btn.title = '図形セルと重なっています';
   }else if (forbidden){
-    btn.textContent = 'このピースではスキャンできない';
+   msg = 'このピースではスキャンできない';
+    btn.textContent = msg;
     btn.disabled = true;
     btn.title = '図形の色付き辺に、異なる色のピースの辺が接しています';
   }else if (overlap){
-    btn.textContent = 'ピースが重なっている';
+    msg = 'ピースが重なっている';
+    btn.textContent = msg;
     btn.disabled = true;
     btn.title = 'ピース同士が重なっています';
   }else if (adjacent){
-    btn.textContent = '同じ色が隣接している';
+    msg = '同じ色が隣接している';
+    btn.textContent = msg;
     btn.disabled = true;
     btn.title = '同色ピースが一辺で隣接しています';
   }else{
     btn.textContent = '次ラウンド';
     btn.disabled = false;
     btn.title = '次ラウンド';
+    msg = ''; // ラベルは非表示
+  }
+
+  // 上部ラベルの反映（同時表示）
+  if (warn){
+    if (msg){
+      warn.textContent = msg;
+      warn.classList.remove('hidden');
+    }else{
+      warn.textContent = '';
+      warn.classList.add('hidden');
+    }
   }
 }
 
