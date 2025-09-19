@@ -837,6 +837,23 @@ body:has(#afterPanel:not(.hidden)) main {
 }
 
 
+/* ▼ FIGURE境界カバレッジ（%）バッジ：セルテーブル右上 */
+#centerDraw .figure-edge-pct{
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #111;
+  color: #fff;
+  font-weight: 800;
+  font-size: 12px;
+  line-height: 28px;
+  text-align: center;
+  z-index: 62;           /* ピース(60)より前面、警告(61)より前 */
+  pointer-events: none;  /* 操作は邪魔しない */
+}
 
 
 </style>
@@ -878,6 +895,8 @@ body:has(#afterPanel:not(.hidden)) main {
 <!-- ▼ 中央 12x12 セル描画（オーバーレイ） -->
 <div id="centerDraw" class="center-draw-layer" aria-hidden="true">
   <svg viewBox="0 0 12 12" preserveAspectRatio="none"></svg>
+  <div id="figureEdgePct" class="figure-edge-pct hidden" aria-hidden="true">0%</div>
+
 </div>
 
       <!-- ▼ ドラッグ同期ピースの描画レイヤ -->
@@ -2859,6 +2878,231 @@ function anyPieceOverlap(allPieces, override){
   }
   return false;
 }
+// === 追加：ピース同士の「重なり」犯人（現ラウンドのみ）を返す
+// ピース同士の「重なり」犯人（今ラのみ）
+function getPieceOverlapOwnersCurrentRound(allPieces, override){
+  const rNow = Number(typeof currentRound === 'function' ? currentRound() : (state?.round ?? 0));
+  const occ = new Map(); // "R,C" -> { id, isCurrent }
+  const offenders = new Set();
+
+  for (const r of Object.keys(allPieces || {})){
+    const roundData = { ...(allPieces[r] || {}) };
+    if (override?.[r]) Object.assign(roundData, override[r]);
+    const isCurrent = Number(r) === rNow;
+
+    for (const [id, obj] of Object.entries(roundData)){
+      for (const [R, C] of transformedCells(obj)){
+        const key = `${R},${C}`;
+        const prev = occ.get(key);
+        if (prev && prev.id !== id){
+          if (isCurrent) offenders.add(id);
+          if (prev.isCurrent) offenders.add(prev.id);
+        } else if (!prev){
+          occ.set(key, { id, isCurrent });
+        }
+      }
+    }
+  }
+  return offenders; // 現ラ同士→両方 / 現ラ×前ラ→現ラのみ / 前ラ同士→0
+}
+
+// FIGURE と重なっている犯人（今ラのみ）
+function getFigureOverlapOwnersCurrentRound(allPieces, override){
+  const rNow = Number(typeof currentRound === 'function' ? currentRound() : (state?.round ?? 0));
+  // 複数FIGURE対応
+  const sets = (typeof getActiveFigureCellSets === 'function')
+    ? getActiveFigureCellSets()
+    : [typeof getActiveFigureCellSet === 'function' ? getActiveFigureCellSet() : null].filter(Boolean);
+  const fig = new Set();
+  for (const s of (sets || [])){ if (s) s.forEach(v => fig.add(v)); }
+
+  const offenders = new Set();
+  for (const r of Object.keys(allPieces || {})){
+    const roundData = { ...(allPieces[r] || {}) };
+    if (override?.[r]) Object.assign(roundData, override[r]);
+    const isCurrent = Number(r) === rNow;
+    if (!isCurrent) continue; // ★ 前ラは除外しない
+
+    for (const [id, obj] of Object.entries(roundData)){
+      for (const [R, C] of transformedCells(obj)){
+        if (fig.has(`${R},${C}`)){ offenders.add(id); break; }
+      }
+    }
+  }
+  return offenders;
+}
+
+
+// === 追加：ピース同士が重なっているときの owner 集合
+function getPieceOverlapOwners(piecesAllRounds, override){
+  const occ = new Map();           
+  const offenders = new Set();
+  for (const r of Object.keys(piecesAllRounds||{})){
+    const roundData = { ...(piecesAllRounds[r]||{}) };
+    if (override?.[r]) Object.assign(roundData, override[r]);
+    for (const [id, obj] of Object.entries(roundData)){
+      for (const [R, C] of transformedCells(obj)){
+        const key = `${R},${C}`;
+        const prev = occ.get(key);
+        if (prev && prev !== id){
+          offenders.add(prev);
+          offenders.add(id);
+        } else {
+          occ.set(key, id);
+        }
+      }
+    }
+  }
+  return offenders;
+}
+
+
+// FIGURE境界の総辺数と、外側でピースに接している辺数を返す
+function computeFigureBoundaryCoverage(piecesAllRounds, override){
+  const fig = getActiveFigureCellSet();
+  if (!fig.size) return { total: 0, covered: 0 };
+
+  // 1) 盤面を占有する全ピースのセル集合（色不問）
+  const occ = new Set(); // "R,C"
+  for (const r of Object.keys(piecesAllRounds||{})){
+    const roundData = { ...(piecesAllRounds[r]||{}) };
+    if (override?.[r]) Object.assign(roundData, override[r]);
+    for (const [, obj] of Object.entries(roundData)){
+      for (const [R, C] of transformedCells(obj)){
+        // 盤面内に丸め（既存判定と整合：境界外は隣接し得ないので無視でOK）
+        if (R>=0 && R<12 && C>=0 && C<12) occ.add(`${R},${C}`);
+      }
+    }
+  }
+
+  // 2) FIGUREの「境界辺」列挙：各図形セルの4方向を見て、隣が図形でなければ境界
+  let total = 0;
+  let covered = 0;
+  const dirs = [[-1,0], [1,0], [0,-1], [0,1]]; // 上下左右
+  for (const key of fig){
+    const [R, C] = key.split(',').map(Number);
+    for (const [dR, dC] of dirs){
+      const nR = R + dR, nC = C + dC;
+      // 図形外（盤外 or 図形でない） → ここは境界
+      const isFigOutside = (nR<0 || nR>11 || nC<0 || nC>11) ? true : !fig.has(`${nR},${nC}`);
+      if (isFigOutside){
+        total++;
+        // 外側セルにピースがあれば「外側でピースと隣接」扱い
+        if (nR>=0 && nR<12 && nC>=0 && nC<12 && occ.has(`${nR},${nC}`)){
+          covered++;
+        }
+      }
+    }
+  }
+  return { total, covered };
+}
+
+// FIGURE外周カバレッジ（%）計算：ignoreOwnersは分子から除外
+// ★ 1セル=Set<ownerId> で重なりを正しく扱う
+function computeFigureBoundaryCoverageFlexible(piecesAllRounds, override, ignoreOwners = new Set()){
+  // 複数FIGUREに対応：Set<"r,c"> の配列で取得（単体しか無い場合にも対応）
+  const figSets = (typeof getActiveFigureCellSets === 'function')
+    ? getActiveFigureCellSets()
+    : [typeof getActiveFigureCellSet === 'function' ? getActiveFigureCellSet() : null].filter(Boolean);
+  if (!figSets.length) return { total: 0, covered: 0 };
+
+  // 盤占有: "R,C" -> Set<ownerId>（重なりセルは複数を保持）
+  const ownersByPos = new Map();
+  for (const r of Object.keys(piecesAllRounds || {})){
+    const roundData = { ...(piecesAllRounds[r] || {}) };
+    if (override?.[r]) Object.assign(roundData, override[r]);
+    for (const [id, obj] of Object.entries(roundData)){
+      for (const [R, C] of transformedCells(obj)){
+        if (R<0 || R>=12 || C<0 || C>=12) continue;
+        const key = `${R},${C}`;
+        if (!ownersByPos.has(key)) ownersByPos.set(key, new Set());
+        ownersByPos.get(key).add(id);           // ← 上書きせず「追加」
+      }
+    }
+  }
+
+  const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+  let total = 0, covered = 0;
+
+  for (const fig of figSets){
+    const has = (r,c)=> fig.has(`${r},${c}`);
+    for (const key of fig){
+      const [R, C] = key.split(',').map(Number);
+      for (const [dR, dC] of dirs){
+        const nR = R + dR, nC = C + dC;
+        const outside = (nR<0 || nR>11 || nC<0 || nC>11) ? true : !has(nR,nC);
+        if (!outside) continue;
+
+        total++;
+
+        if (nR>=0 && nR<12 && nC>=0 && nC<12){
+          const owners = ownersByPos.get(`${nR},${nC}`) || new Set();
+          // ★ 少なくとも1人でも「除外対象ではない」オーナーがいれば covered
+          let ok = false;
+          for (const oid of owners){
+            if (!ignoreOwners.has(oid)){ ok = true; break; }
+          }
+          if (ok) covered++;
+        }
+      }
+    }
+  }
+  return { total, covered };
+}
+
+
+
+
+// %算出してバッジに反映
+// %算出してバッジに反映（警告別の犯人除外対応）
+// %算出してバッジに反映（警告別の犯人除外対応）
+function updateFigureEdgePctBadge(override){
+  const el = document.getElementById('figureEdgePct');
+  if (!el) return;
+
+  const pieces = state.centerPieces || {};
+
+  // 既存の警告評価（順序はそのまま）
+  const overhang  = anyPieceOverhang(pieces, override);
+  const fOverlap  = overhang ? false : anyFigureOverlap(pieces, override);
+  const forbidden = (overhang || fOverlap) ? false : anyDifferentColorPieceEdgeTouchesFigureEdge(pieces, override);
+  const overlap   = (overhang || fOverlap || forbidden) ? false : anyPieceOverlap(pieces, override);
+  const adjacent  = (overhang || fOverlap || forbidden || overlap) ? false : anySameColorEdgeAdjacent(pieces, override);
+
+  // 警告別に “除外 owner” を決定
+// ... 警告の真偽判定までは既存どおり ...
+let ignoreOwners = new Set();
+
+if (forbidden){
+  ignoreOwners = getForbiddenOwners(pieces, override); // 既存：異色×図形色付き辺のみ除外
+} else if (fOverlap){
+  // FIGUREと重なり → 今ラのみ除外（前ラは％維持）
+  ignoreOwners = getFigureOverlapOwnersCurrentRound(pieces, override);
+} else if (overlap){
+  // ピース同士の重なり → 今ラのみ除外（前ラは％維持）
+  ignoreOwners = getPieceOverlapOwnersCurrentRound(pieces, override);
+} else if (adjacent){
+  // 同色隣接 → 今ラのみ除外（既存仕様）
+  ignoreOwners = getSameColorAdjacentOwnersCurrentRound(pieces, override);
+} else {
+  ignoreOwners = new Set();
+}
+
+const { total, covered } =
+  computeFigureBoundaryCoverageFlexible(pieces, override, ignoreOwners);
+// 以降の % 表示更新は既存どおり
+
+// 既存関数：owner 除外対応 :contentReference[oaicite:3]{index=3}
+  if (total <= 0){
+    el.textContent = '0%';
+    el.classList.add('hidden');
+    return;
+  }
+  const pct = Math.round((covered / total) * 100);
+  el.textContent = pct + '%';
+  el.classList.remove('hidden');
+}
+
 
 
 // 現在ステージの“図形（figure）”の塗りセル集合を取得（key = "R,C" = "y,x"）
@@ -2889,6 +3133,38 @@ function getActiveFigureCellSet(){
   }
   return set;
 }
+
+// === 追加：各FIGUREごとのセル集合を返す（個別→合算用）
+function getActiveFigureCellSets(){
+  const stg = Number(state.stage || 0);
+  const specs = [];
+  if (stg === 1 && typeof MISSION_1 !== 'undefined') {
+    specs.push(MISSION_1);
+  } else if (stg === 2) {
+    if (typeof MISSION_2_FIG1 !== 'undefined') specs.push(MISSION_2_FIG1);
+    if (typeof MISSION_2_FIG2 !== 'undefined') specs.push(MISSION_2_FIG2);
+  } else if (stg === 3) {
+    if (typeof MISSION_3_FIG1 !== 'undefined') specs.push(MISSION_3_FIG1);
+    if (typeof MISSION_3_FIG2 !== 'undefined') specs.push(MISSION_3_FIG2);
+  } else if (stg === 4) {
+    if (typeof MISSION_4_FIG1 !== 'undefined') specs.push(MISSION_4_FIG1);
+    if (typeof MISSION_4_FIG2 !== 'undefined') specs.push(MISSION_4_FIG2);
+  } else if (stg === 5) {
+    if (typeof MISSION_5_FIG1 !== 'undefined') specs.push(MISSION_5_FIG1);
+    if (typeof MISSION_5_FIG2 !== 'undefined') specs.push(MISSION_5_FIG2);
+  }
+  const out = [];
+  for (const spec of specs){
+    const set = new Set();
+    for (const token of (spec?.fills || [])){
+      const c = cellXY(token);
+      if (c) set.add(`${c.y},${c.x}`); // [R,C]=[y,x]
+    }
+    if (set.size) out.push(set);
+  }
+  return out;
+}
+
 
 // 図形（現在のステージ）の「色が塗られた辺」を列挙
 function getActiveFigureEdges(){
@@ -2976,6 +3252,82 @@ function anyDifferentColorPieceEdgeTouchesFigureEdge(allPieces, override){
   return false;
 }
 
+// === 追加：図形“色付き辺”と異色ピース外周の接触犯人(owner)集合
+function getForbiddenOwners(piecesAllRounds, override){
+  const ownerByPos = new Map();   // "R,C" -> ownerId
+  const colorById  = new Map();   // ownerId -> color
+  for (const r of Object.keys(piecesAllRounds||{})){
+    const roundData = { ...(piecesAllRounds[r]||{}) };
+    if (override?.[r]) Object.assign(roundData, override[r]);
+    for (const [id, obj] of Object.entries(roundData)){
+      colorById.set(id, obj.color || '');
+      for (const [R,C] of transformedCells(obj)){
+        ownerByPos.set(`${R},${C}`, id);
+      }
+    }
+  }
+  const edges = getActiveFigureEdges();
+  const offenders = new Set();
+  if (!edges.length) return offenders;
+
+  const cand = (r,c,side)=>(
+    side === 'top'    ? [{R:r,   C:c,   needEmpty:`${r-1},${c}`, ownerEdgeCell:`${r},${c}`}   , {R:r-1, C:c,   needEmpty:`${r},${c}`,   ownerEdgeCell:`${r-1},${c}`} ] :
+    side === 'bottom' ? [{R:r,   C:c,   needEmpty:`${r+1},${c}`, ownerEdgeCell:`${r},${c}`}   , {R:r+1, C:c,   needEmpty:`${r},${c}`,   ownerEdgeCell:`${r+1},${c}`} ] :
+    side === 'left'   ? [{R:r,   C:c,   needEmpty:`${r},${c-1}`, ownerEdgeCell:`${r},${c}`}   , {R:r,   C:c-1, needEmpty:`${r},${c}`,   ownerEdgeCell:`${r},${c-1}`} ] :
+                        [{R:r,   C:c,   needEmpty:`${r},${c+1}`, ownerEdgeCell:`${r},${c}`}   , {R:r,   C:c+1, needEmpty:`${r},${c}`,   ownerEdgeCell:`${r},${c+1}`} ]
+  );
+
+  for (const e of edges){
+    const { r, c, side, color: figEdgeColor } = e;
+    for (const k of cand(r,c,side)){
+      const owner = ownerByPos.get(`${k.R},${k.C}`);
+      if (!owner) continue;
+      const pieceColor = colorById.get(owner) || '';
+      if (figEdgeColor && pieceColor && pieceColor !== figEdgeColor){
+        offenders.add(owner);
+      }
+    }
+  }
+  return offenders;
+}
+
+// === 追加：同色“隣接”の犯人(owner)集合（※現在ラウンドのものだけ）
+function getSameColorAdjacentOwnersCurrentRound(piecesAllRounds, override){
+  const rNow = currentRound();
+  const posMapByColor = new Map(); // color -> Map("R,C"->owner)
+  const myRoundIds = new Set();
+
+  // 色ごとの占有マップを作成
+  for (const r of Object.keys(piecesAllRounds||{})){
+    const roundData = { ...(piecesAllRounds[r]||{}) };
+    if (override?.[r]) Object.assign(roundData, override[r]);
+    for (const [id, obj] of Object.entries(roundData)){
+      if (!posMapByColor.has(obj.color||'')) posMapByColor.set(obj.color||'', new Map());
+      if (Number(r) === Number(rNow)) myRoundIds.add(id);
+      for (const [R,C] of transformedCells(obj)){
+        posMapByColor.get(obj.color||'').set(`${R},${C}`, id);
+      }
+    }
+  }
+
+  const offenders = new Set();
+  // 同色隣接を走査（犯人は“現在ラウンドのピースのみ”に限定）
+  for (const [color, map] of posMapByColor.entries()){
+    for (const [pos, id] of map.entries()){
+      if (!myRoundIds.has(id)) continue; // 確定ピースは犯人にしない
+      const [R,C] = pos.split(',').map(Number);
+      const neigh = [[R-1,C],[R+1,C],[R,C-1],[R,C+1]];
+      for (const [RR,CC] of neigh){
+        const other = map.get(`${RR},${CC}`);
+        if (other && other !== id){
+          offenders.add(id); // 自分（現ラ）だけ犯人扱い
+          break;
+        }
+      }
+    }
+  }
+  return offenders;
+}
 
 
 // 任意のピースが“図形セル”のいずれかと1マスでも重なれば true
@@ -3056,6 +3408,7 @@ function recalcNextBtnAndUpdate(override){
   const overlap   = (overhang || fOverlap || forbidden) ? false : anyPieceOverlap(pieces, override);
   const adjacent  = (overhang || fOverlap || forbidden || overlap) ? false : anySameColorEdgeAdjacent(pieces, override);
   setNextBtnStatus({ overhang, fOverlap, forbidden, overlap, adjacent });
+  updateFigureEdgePctBadge(override);
 }
 
 
