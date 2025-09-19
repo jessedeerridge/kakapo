@@ -2782,9 +2782,14 @@ function beginDrag(el, ev, round, id, obj){
   el.style.zIndex = String((round * 1000) + nextZ);
 
   // ポインタ位置→要素左上オフセット
-  const rect = el.getBoundingClientRect();
-  state.dragging.offPx = { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
-}
+  // ★修正：ポインタ位置→『世界中心』オフセット（中心アンカー）
+  const grid = getCenterRect();                 // グリッドの画面座標
+  const { cxPx, cyPx } = pieceWorldCenterPx(obj); // 現在の世界中心(px)
+  // ポインタ − 世界中心 を保持（以後は世界中心=ポインタ−この差分）
+  state.dragging.offPx = {
+    x: ev.clientX - (grid.left + cxPx),
+    y: ev.clientY - (grid.top  + cyPx)
+  };}
 
 function onPiecePointerMove(ev, el, round, id, obj){
   // まだドラッグ開始していなければ、移動量で判定
@@ -2806,17 +2811,11 @@ function onPiecePointerMove(ev, el, round, id, obj){
   const grid = getCenterRect();
   const cell = grid.width / 12;
 
-  // ★ 修正: 左上アンカーではなく「中心アンカー＋回転後外接矩形」で境界判定
-  const anchorPxX = ev.clientX - grid.left - state.dragging.offPx.x;
-  const anchorPxY = ev.clientY - grid.top  - state.dragging.offPx.y;
-
+  // ★修正：中心アンカーで直接「世界中心(px)」を算出
   const cur = state.centerPieces?.[r]?.[pid] || obj;
   if (!cur) return;
-
-  // ピース中心のオフセット（左上→中心）
-  const { oxPx, oyPx } = pieceWorldCenterPx({ ...cur, x:0, y:0 });
-  const wantCxPx = anchorPxX + oxPx;
-  const wantCyPx = anchorPxY + oyPx;
+  const wantCxPx = ev.clientX - grid.left - state.dragging.offPx.x;
+  const wantCyPx = ev.clientY - grid.top  - state.dragging.offPx.y;
 
   // 2マスまではみ出し可能にして中心をクリップ
   const clamped = clampCenterPxToGrid(wantCxPx, wantCyPx, cur, 2);
