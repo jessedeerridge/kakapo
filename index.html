@@ -752,7 +752,24 @@ html, body{
   z-index: 120;        /* ヘッダーより前面 */
 }
 
-
+/* ▼ スキャン完了ポップ（中央・左からスライドイン） */
+.scan-complete-pop{
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  background: #facc15;       /* 黄色 */
+  color: #111;               /* 黒字 */
+  font-size: 18px;
+  font-weight: 800;
+  padding: 10px 18px;
+ border-radius: 16px;
+  box-shadow: 0 18px 40px rgba(0,0,0,.28);
+transform: translate(calc(-50% - 60vw), -50%);  transition: transform .55s cubic-bezier(.22,.84,.44,1);
+ z-index: 240;
+}
+.scan-complete-pop.show{
+  transform: translate(-50%,-50%);   /* 中央へスライドイン */
+}
 
 /* 入室画面だけ背景を薄くして全画面に広げる */
 body:has(#joinPanel:not(.hidden)) main {
@@ -856,6 +873,9 @@ body:has(#afterPanel:not(.hidden)) main {
 }
 
 
+
+
+
 </style>
 </head>
 <body>
@@ -865,6 +885,10 @@ body:has(#afterPanel:not(.hidden)) main {
 </header>
 
 <div id="missionNumberPop" class="mission-number-pop hidden">#1</div>
+<!-- スキャン完了（黄色ポップ） -->
+ <div id="scanCompletePop" class="scan-complete-pop hidden" aria-live="polite">スキャン完了</div>
+<!-- スキャン完了サウンド -->
+<audio id="scanCompleteSound" src="kakaposuc.mp3" preload="auto"></audio>
 
 
 <main>
@@ -1518,6 +1542,30 @@ renderEdgesGrouped(gEdge, spec.edges || []);
 
 // ★ ミッション番号ポップ
 const missionNumberPop = document.getElementById('missionNumberPop');
+
+// ★ スキャン完了ポップ
+const scanCompletePop = document.getElementById('scanCompletePop');
+const scanCompleteSound = document.getElementById('scanCompleteSound');
+
+function showScanCompletePop(){
+  if (!scanCompletePop) return;
+  scanCompletePop.textContent = 'スキャン完了';
+  scanCompletePop.classList.remove('hidden');   // ← 最初に見えるように
+  // reflow で transition を確実に効かせる
+  void scanCompletePop.offsetWidth;
+  scanCompletePop.classList.add('show');        // スライドイン
+  if (scanCompleteSound) {
+    scanCompleteSound.currentTime = 0;
+    scanCompleteSound.play().catch(()=>{});
+  }
+
+
+  clearTimeout(scanCompletePop._timer);
+  scanCompletePop._timer = setTimeout(()=>{
+    scanCompletePop.classList.remove('show');
+ setTimeout(()=> scanCompletePop.classList.add('hidden'), 600);
+  }, 2200);
+}
 
 function updateMissionNumberPop(){
   if (typeof state.stage === 'number' && state.stage > 0){
@@ -3101,6 +3149,13 @@ const { total, covered } =
   const pct = Math.round((covered / total) * 100);
   el.textContent = pct + '%';
   el.classList.remove('hidden');
+
+  // ▼ 100%に到達した瞬間だけ黄色ポップをスライドイン
+  const prev = Number(el.dataset.pct || '0');
+  el.dataset.pct = String(pct);
+  if (pct === 100 && prev < 100) {
+    showScanCompletePop();
+  }
 }
 
 
