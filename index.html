@@ -809,7 +809,13 @@ body:has(#afterPanel:not(.hidden)) main {
 
 
 
-
+/* 次ラウンドボタン：無効時に薄く */
+#btnNextRound:disabled {
+  opacity: 0.4;          /* 半透明に */
+  cursor: not-allowed;    /* ホバー時カーソルも禁止マーク */
+  filter: grayscale(30%); /* お好みで少し白黒に */
+  transition: opacity .2s;
+}
 
 
 
@@ -1405,6 +1411,7 @@ function updateMissionOverlay(){
     clearMissionOverlay();
     centerDraw?.classList.add('hidden'); // 視覚的にも非表示
   } updateMissionNumberPop(); 
+ recalcNextBtnAndUpdate(); 
 }
 
 // 図リストをそれぞれ独立した <g> に描画（置かれたセルは“指定の通り”に表示）
@@ -2530,6 +2537,7 @@ function renderCenterPieces(){
     const interactive = (r === rNow);
     drawPieceEl(r, id, obj, interactive);
   }
+recalcNextBtnAndUpdate();
 }
 
 
@@ -2584,6 +2592,7 @@ btnH.addEventListener('click', async (e)=>{
   e.stopPropagation();
   const patch = { flipX: !obj.flipX };
   const pos   = computeXYForNewTransform(obj, patch);
+  recalcAdjacencyAndUpdate({ [String(round)]: { [String(id)]: { ...obj, ...patch, ...pos } } });
   try{
     await update(piecePath(round,id), { ...patch, ...pos, updatedAt: Date.now() });
   }catch(_e){}
@@ -2593,6 +2602,7 @@ btnV.addEventListener('click', async (e)=>{
   e.stopPropagation();
   const patch = { flipY: !obj.flipY };
   const pos   = computeXYForNewTransform(obj, patch);
+    recalcAdjacencyAndUpdate({ [String(round)]: { [String(id)]: { ...obj, ...patch, ...pos } } });
   try{
     await update(piecePath(round,id), { ...patch, ...pos, updatedAt: Date.now() });
   }catch(_e){}
@@ -2630,6 +2640,8 @@ el.addEventListener('pointerup', async (e) => {
 const next  = (((obj.angle || 0) + 90) % 360);
 const patch = { angle: next };
 const pos   = computeXYForNewTransform(obj, patch);
+  recalcAdjacencyAndUpdate({ [String(round)]: { [String(id)]: { ...obj, ...patch, ...pos } } });
+
 try{
   await update(piecePath(round, id), { ...patch, ...pos, updatedAt: Date.now() });
 } catch(_e){}
@@ -2740,6 +2752,276 @@ function computeXYForNewTransform(oldObj, patch){
   return xyFromWorldCenter(nextObj, clamped.cxPx, clamped.cyPx);
 }
 
+// rel(行r,列c) → 盤面の絶対セル(行R,列C)へ。CSS rotateは時計回り基準。
+function transformedCells(obj){
+  const rel = Array.isArray(obj.rel) ? obj.rel : [];
+  const { cx, cy } = pieceCenterCell(obj);
+  const ang = ((obj.angle||0)%360+360)%360;   // 0,90,180,270のみ
+  const sx  = obj.flipX ? -1 : 1;
+  const sy  = obj.flipY ? -1 : 1;
+  const out = [];
+  for (const [r,c] of rel){
+    // セル中心での相対座標（整数）
+    let dx = (c - cx) * sx;
+    let dy = (r - cy) * sy;
+    // 時計回り回転（CSS準拠）
+    let x = dx, y = dy;
+    if (ang === 90)      { x = -dy; y =  dx; }
+    else if (ang === 180){ x = -dx; y = -dy; }
+    else if (ang === 270){ x =  dy; y = -dx; }
+    const R = obj.y + cy + y;
+    const C = obj.x + cx + x;
+    out.push([R, C]);
+  }
+  return out;
+}
+
+// state.centerPieces（全ラウンド）に対して、同色どうしが辺で隣接しているか
+// override = { [round]: { [id]: { ...obj(上書き) } } } を与えるとその状態で判定
+function anySameColorEdgeAdjacent(allPieces, override){
+  const posMapByColor = new Map(); // color -> Map("R,C" -> ownerId)
+  // 1) 占有マップ構築
+  for (const r of Object.keys(allPieces||{})){
+    const roundData = { ...(allPieces[r]||{}) };
+    if (override?.[r]) Object.assign(roundData, override[r]);
+    for (const [id, obj] of Object.entries(roundData)){
+      const color = obj.color || '';
+      if (!posMapByColor.has(color)) posMapByColor.set(color, new Map());
+      const map = posMapByColor.get(color);
+      for (const [R,C] of transformedCells(obj)){
+        map.set(`${R},${C}`, id);
+      }
+    }
+  }
+  // 2) 辺隣接の検出（同色・別ID）
+  for (const r of Object.keys(allPieces||{})){
+    const roundData = { ...(allPieces[r]||{}) };
+    if (override?.[r]) Object.assign(roundData, override[r]);
+    for (const [id, obj] of Object.entries(roundData)){
+      const map = posMapByColor.get(obj.color||'');
+      if (!map) continue;
+      for (const [R,C] of transformedCells(obj)){
+        const neigh = [[R-1,C],[R+1,C],[R,C-1],[R,C+1]];
+        for (const [RR,CC] of neigh){
+          const owner = map.get(`${RR},${CC}`);
+          if (owner && owner !== id) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function anyPieceOverhang(allPieces, override){
+  for (const r of Object.keys(allPieces||{})){
+    const roundData = { ...(allPieces[r]||{}) };
+    if (override?.[r]) Object.assign(roundData, override[r]);
+    for (const [, obj] of Object.entries(roundData)){
+      for (const [R, C] of transformedCells(obj)){
+        if (R < 0 || R > 11 || C < 0 || C > 11) return true;
+      }
+    }
+  }
+  return false;
+}
+
+// ピース同士の「重なり」（セル単位）が1つでもあれば true（色は不問）
+function anyPieceOverlap(allPieces, override){
+  const occ = new Map(); // key="R,C" -> ownerId
+  for (const r of Object.keys(allPieces||{})){
+    const roundData = { ...(allPieces[r]||{}) };
+    if (override?.[r]) Object.assign(roundData, override[r]);
+    for (const [id, obj] of Object.entries(roundData)){
+      for (const [R, C] of transformedCells(obj)){
+        const key = `${R},${C}`;
+        const owner = occ.get(key);
+        if (owner && owner !== id) return true; // 同じセルを別IDが占有
+        occ.set(key, id);
+      }
+    }
+  }
+  return false;
+}
+
+
+// 現在ステージの“図形（figure）”の塗りセル集合を取得（key = "R,C" = "y,x"）
+function getActiveFigureCellSet(){
+  const stg = Number(state.stage || 0);
+  const specs = [];
+  if (stg === 1 && typeof MISSION_1 !== 'undefined') {
+    specs.push(MISSION_1);
+  } else if (stg === 2) {
+    if (typeof MISSION_2_FIG1 !== 'undefined') specs.push(MISSION_2_FIG1);
+    if (typeof MISSION_2_FIG2 !== 'undefined') specs.push(MISSION_2_FIG2);
+  } else if (stg === 3) {
+    if (typeof MISSION_3_FIG1 !== 'undefined') specs.push(MISSION_3_FIG1);
+    if (typeof MISSION_3_FIG2 !== 'undefined') specs.push(MISSION_3_FIG2);
+  } else if (stg === 4) {
+    if (typeof MISSION_4_FIG1 !== 'undefined') specs.push(MISSION_4_FIG1);
+    if (typeof MISSION_4_FIG2 !== 'undefined') specs.push(MISSION_4_FIG2);
+  } else if (stg === 5) {
+    if (typeof MISSION_5_FIG1 !== 'undefined') specs.push(MISSION_5_FIG1);
+    if (typeof MISSION_5_FIG2 !== 'undefined') specs.push(MISSION_5_FIG2);
+  }
+  const set = new Set();
+  for (const spec of specs){
+    for (const token of (spec?.fills || [])){
+      const c = cellXY(token);
+      if (c) set.add(`${c.y},${c.x}`); // 注意: transformedCells は [R,C] = [y,x]
+    }
+  }
+  return set;
+}
+
+// 図形（現在のステージ）の「色が塗られた辺」を列挙
+function getActiveFigureEdges(){
+  // 現在のステージ番号が無ければ空
+  if (typeof state?.stage === 'undefined' || state.stage === null) return [];
+
+  const stg = Number(state.stage);
+  const specs = [];
+  if (stg === 1){
+    if (typeof MISSION_1 !== 'undefined') specs.push(MISSION_1);
+  } else if (stg === 2){
+    if (typeof MISSION_2_FIG1 !== 'undefined') specs.push(MISSION_2_FIG1);
+    if (typeof MISSION_2_FIG2 !== 'undefined') specs.push(MISSION_2_FIG2);
+  } else if (stg === 3){
+    if (typeof MISSION_3_FIG1 !== 'undefined') specs.push(MISSION_3_FIG1);
+    if (typeof MISSION_3_FIG2 !== 'undefined') specs.push(MISSION_3_FIG2);
+  } else if (stg === 4){
+    if (typeof MISSION_4_FIG1 !== 'undefined') specs.push(MISSION_4_FIG1);
+    if (typeof MISSION_4_FIG2 !== 'undefined') specs.push(MISSION_4_FIG2);
+  } else if (stg === 5){
+    if (typeof MISSION_5_FIG1 !== 'undefined') specs.push(MISSION_5_FIG1);
+    if (typeof MISSION_5_FIG2 !== 'undefined') specs.push(MISSION_5_FIG2);
+  }
+
+  // {r,c,side,color} に正規化（r=行(0始まり), c=列(0始まり)）
+  const out = [];
+  for (const spec of specs){
+    for (const e of (spec?.edges || [])){
+      const c = cellXY(e.cell);
+      if (!c) continue;
+      out.push({ r: c.y, c: c.x, side: String(e.side||'').toLowerCase(), color: String(e.color||'') });
+    }
+  }
+  return out;
+}
+// 図形の色付き辺に、異なる色のピースの「外周辺」が1本でも接していれば true
+function anyDifferentColorPieceEdgeTouchesFigureEdge(allPieces, override){
+  // 1) 盤面の占有(owner)と色テーブルを構築
+  const ownerByPos = new Map();   // "R,C" -> ownerId
+  const colorById  = new Map();   // ownerId -> color
+
+  for (const r of Object.keys(allPieces||{})){
+    const roundData = { ...(allPieces[r]||{}) };
+    if (override?.[r]) Object.assign(roundData, override[r]);
+    for (const [id, obj] of Object.entries(roundData)){
+      colorById.set(id, obj.color || '');
+      for (const [R,C] of transformedCells(obj)){
+        ownerByPos.set(`${R},${C}`, id);
+      }
+    }
+  }
+
+  // 2) 図形の「色付き辺」一覧を取得
+  const edges = getActiveFigureEdges();
+  if (!edges.length) return false;
+
+  // 3) エッジごとに、同一直線上のピース外周が接していないか判定
+  for (const e of edges){
+    const { r, c, side, color: figEdgeColor } = e;
+
+    // 図形エッジと一致する“セルと辺”の候補（セル座標/辺向きペア）
+    // 例: 図(top,r,c) に接するピース外周は (r,c)のtop か (r-1,c)のbottom
+    const candidates =
+      side === 'top'    ? [{R:r,   C:c,   needEmpty:`${r-1},${c}`, ownerEdgeCell:`${r},${c}`}   , {R:r-1, C:c,   needEmpty:`${r},${c}`,   ownerEdgeCell:`${r-1},${c}`} ] :
+      side === 'bottom' ? [{R:r,   C:c,   needEmpty:`${r+1},${c}`, ownerEdgeCell:`${r},${c}`}   , {R:r+1, C:c,   needEmpty:`${r},${c}`,   ownerEdgeCell:`${r+1},${c}`} ] :
+      side === 'left'   ? [{R:r,   C:c,   needEmpty:`${r},${c-1}`, ownerEdgeCell:`${r},${c}`}   , {R:r,   C:c-1, needEmpty:`${r},${c}`,   ownerEdgeCell:`${r},${c-1}`} ] :
+      side === 'right'  ? [{R:r,   C:c,   needEmpty:`${r},${c+1}`, ownerEdgeCell:`${r},${c}`}   , {R:r,   C:c+1, needEmpty:`${r},${c}`,   ownerEdgeCell:`${r},${c+1}`} ] :
+                          [];
+
+    for (const cand of candidates){
+      const owner = ownerByPos.get(`${cand.R},${cand.C}`);
+      if (!owner) continue; // その位置にピースなし
+
+      // 外周判定：線の“反対側”セルを同じ owner が占有していないこと
+      if (ownerByPos.get(cand.needEmpty) === owner) continue; // 内部辺なのでアウト
+
+      // 色が異なるか？
+      const pieceColor = colorById.get(owner) || '';
+      if (pieceColor && figEdgeColor && pieceColor !== figEdgeColor){
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+
+
+// 任意のピースが“図形セル”のいずれかと1マスでも重なれば true
+function anyFigureOverlap(allPieces, override){
+  const fig = getActiveFigureCellSet();
+  if (!fig.size) return false;
+  for (const r of Object.keys(allPieces||{})){
+    const roundData = { ...(allPieces[r]||{}) };
+    if (override?.[r]) Object.assign(roundData, override[r]);
+    for (const [, obj] of Object.entries(roundData)){
+      for (const [R, C] of transformedCells(obj)){
+        if (fig.has(`${R},${C}`)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function setNextBtnStatus({ overhang, fOverlap, forbidden, overlap, adjacent }){
+  const btn = document.getElementById('btnNextRound');
+  if (!btn) return;
+  if (overhang){
+    btn.textContent = 'スコープ外に出ている';
+    btn.disabled = true;
+    btn.title = 'ピースがセルテーブルからはみ出しています';
+  }else if (fOverlap){
+    btn.textContent = '鳥ピースと重なっている';
+    btn.disabled = true;
+    btn.title = '図形セルと重なっています';
+  }else if (forbidden){
+    btn.textContent = 'このピースではスキャンできない';
+    btn.disabled = true;
+    btn.title = '図形の色付き辺に、異なる色のピースの辺が接しています';
+  }else if (overlap){
+    btn.textContent = 'ピースが重なっている';
+    btn.disabled = true;
+    btn.title = 'ピース同士が重なっています';
+  }else if (adjacent){
+    btn.textContent = '同じ色が隣接している';
+    btn.disabled = true;
+    btn.title = '同色ピースが一辺で隣接しています';
+  }else{
+    btn.textContent = '次ラウンド';
+    btn.disabled = false;
+    btn.title = '次ラウンド';
+  }
+}
+
+
+
+function recalcNextBtnAndUpdate(override){
+  const pieces = state.centerPieces || {};
+  const overhang  = anyPieceOverhang(pieces, override);
+  const fOverlap  = overhang ? false : anyFigureOverlap(pieces, override);
+  // 新：異色辺隣接（図形の色付き辺 × ピース外周）
+  const forbidden = (overhang || fOverlap) ? false : anyDifferentColorPieceEdgeTouchesFigureEdge(pieces, override);
+  const overlap   = (overhang || fOverlap || forbidden) ? false : anyPieceOverlap(pieces, override);
+  const adjacent  = (overhang || fOverlap || forbidden || overlap) ? false : anySameColorEdgeAdjacent(pieces, override);
+  setNextBtnStatus({ overhang, fOverlap, forbidden, overlap, adjacent });
+}
+
+
+
 function pickMaxZ(r){
   const data = state.centerPieces?.[r] || {};
   let z = 0;
@@ -2830,7 +3112,8 @@ function onPiecePointerMove(ev, el, round, id, obj){
     const sx = cur.flipX ? -1 : 1;
     const sy = cur.flipY ? -1 : 1;
     el.style.transform = `translate(${x*cell}px, ${y*cell}px) rotate(${ang}deg) scale(${sx}, ${sy})`;
-
+    const override = { [String(r)]: { [String(pid)]: { ...cur, x, y } } };
+recalcNextBtnAndUpdate(override);
     try{
       await update(piecePath(r,pid), { x, y, updatedAt: Date.now() });
     }catch(e){}
