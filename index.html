@@ -889,7 +889,11 @@ body:has(#afterPanel:not(.hidden)) main {
  <div id="scanCompletePop" class="scan-complete-pop hidden" aria-live="polite">スキャン完了</div>
 <!-- スキャン完了サウンド -->
 <audio id="scanCompleteSound" src="kakaposuc.mp3" preload="auto"></audio>
-
+<audio id="soundMuku" src="muku.mp3" preload="auto"></audio>
+<audio id="soundHokekyo" src="hokekyo.mp3" preload="auto"></audio>
+<audio id="soundPiyo" src="piyo.mp3" preload="auto"></audio>
+<audio id="soundKakko" src="kakko.mp3" preload="auto"></audio>
+2
 
 <main>
   <!-- 入室 -->
@@ -1074,6 +1078,20 @@ const playersTabs = document.getElementById('playersTabs');
   const decisionCardBox = document.getElementById('decisionCardBox');
   const nextPanel       = document.getElementById('nextPanel');
   const btnNextRound    = document.getElementById('btnNextRound');
+
+// ★ 次ラウンドクリック時にランダム音を再生
+btnNextRound.addEventListener('click', () => {
+  const sounds = [
+    document.getElementById('soundMuku'),
+    document.getElementById('soundHokekyo'),
+    document.getElementById('soundPiyo'),
+    document.getElementById('soundKakko')
+  ];
+  const pick = sounds[Math.floor(Math.random() * sounds.length)];
+  pick.currentTime = 0;
+  pick.play();
+});
+
 
   // 中央レイヤ
   const centerGrid  = document.getElementById('centerGrid');   // 背景の12x12罫線
