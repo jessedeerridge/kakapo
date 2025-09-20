@@ -2694,7 +2694,14 @@ btnH.addEventListener('click', async (e)=>{
   e.stopPropagation();
   const patch = { flipX: !obj.flipX };
   const pos   = computeXYForNewTransform(obj, patch);
-  recalcAdjacencyAndUpdate({ [String(round)]: { [String(id)]: { ...obj, ...patch, ...pos } } });
+
+  const override = {
+    [String(round)]: {
+      [String(id)]: { ...obj, ...patch, ...pos }
+    }
+  };
+  recalcNextBtnAndUpdate(override);   // ← これでUIの再評価
+
   try{
     await update(piecePath(round,id), { ...patch, ...pos, updatedAt: Date.now() });
   }catch(_e){}
@@ -2704,7 +2711,14 @@ btnV.addEventListener('click', async (e)=>{
   e.stopPropagation();
   const patch = { flipY: !obj.flipY };
   const pos   = computeXYForNewTransform(obj, patch);
-    recalcAdjacencyAndUpdate({ [String(round)]: { [String(id)]: { ...obj, ...patch, ...pos } } });
+
+  const override = {
+    [String(round)]: {
+      [String(id)]: { ...obj, ...patch, ...pos }
+    }
+  };
+  recalcNextBtnAndUpdate(override);
+
   try{
     await update(piecePath(round,id), { ...patch, ...pos, updatedAt: Date.now() });
   }catch(_e){}
@@ -2853,6 +2867,7 @@ function computeXYForNewTransform(oldObj, patch){
   const clamped = clampCenterPxToGrid(cxPx, cyPx, nextObj);
   return xyFromWorldCenter(nextObj, clamped.cxPx, clamped.cyPx);
 }
+
 
 // rel(行r,列c) → 盤面の絶対セル(行R,列C)へ。CSS rotateは時計回り基準。
 function transformedCells(obj){
@@ -3647,4 +3662,3 @@ function onPiecePointerUp(ev, el, move, up, round, id, obj){
 </script>
 </body>
 </html>
-
